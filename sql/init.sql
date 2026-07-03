@@ -7,7 +7,7 @@ create table if not exists entries (
     message text not null,
     site text,
     email varchar(255),
-    hide boolean not null default false,
+    status varchar(20) not null default 'hidden',
     ip_hash varchar(255),
     user_agent text,
     sentiment_score real default 0.2,
@@ -25,9 +25,9 @@ create table if not exists defaulters (
     last_offense_at     timestamptz not null default now()
 );
 
-
 create index if not exists idx_entries_search on entries using gin (search_vector);
 create index if not exists idx_entries_created_at on entries (created_at desc);
 create index if not exists idx_entries_message_trgm on entries using gin (message gin_trgm_ops);
-create index if not exists idx_entries_visible on entries (created_at desc) where hide = false;
+create index if not exists idx_entries_visible on entries (created_at desc) where status = 'visible';
+create index if not exists idx_entries_hidden on entries (created_at desc) where status = 'hidden';
 create index if not exists idx_entries_iphash_created on entries (ip_hash, created_at);
