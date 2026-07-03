@@ -2,3 +2,9 @@
 !.gitignore
 !go.mod
 !*.go
+!go.sum
+
+
+!Dockerfile
+!docker-compose.yml
+!.env.sample
