@@ -2,21 +2,37 @@ package main
 
 import (
 	"context"
+	"log"
 	"net/http"
+	"os"
 
 	"github.com/go-redis/redis_rate/v10"
 	"github.com/labstack/echo/v5"
+
+	openrouter "github.com/OpenRouterTeam/go-sdk"
 	"github.com/labstack/echo/v5/middleware"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 var rc *redis.Client
 var rl *redis_rate.Limiter
+var op *openrouter.OpenRouter
+var db *gorm.DB
 
 func main() {
 	e := echo.New()
+	var dberr error
+	db, dberr = gorm.Open(postgres.Open(os.Getenv("DATABASE_URL")), &gorm.Config{})
+	if dberr != nil {
+		log.Fatalln(dberr)
+	}
+
+	op = openrouter.New(openrouter.WithSecurity(os.Getenv("OPENROUTER_KEY")))
+
 	rc = redis.NewClient(&redis.Options{
-		Addr: "redis:6379",
+		Addr: os.Getenv("REDIS_URL"),
 	})
 	if err := rc.Ping(context.Background()).Err(); err != nil {
 		e.Logger.Error("redis connection failed", "error", err)
@@ -24,6 +40,9 @@ func main() {
 	rl = redis_rate.NewLimiter(rc)
 	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: []string{"*"},
+	}))
 	e.Use(rateLimit)
 
 	e.GET("/", func(c *echo.Context) error {
@@ -35,6 +54,7 @@ func main() {
 	}
 }
 
+// ::MIDDLEWARES
 func rateLimit(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		res, err := rl.Allow(c.Request().Context(), c.RealIP(), redis_rate.PerMinute(10))
@@ -47,3 +67,5 @@ func rateLimit(next echo.HandlerFunc) echo.HandlerFunc {
 		return next(c)
 	}
 }
+
+// ::HANDLERS

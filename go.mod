@@ -5,6 +5,7 @@ go 1.26.4
 require github.com/labstack/echo/v5 v5.2.1
 
 require (
+	github.com/OpenRouterTeam/go-sdk v0.5.10 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/go-redis/redis v6.15.9+incompatible // indirect
@@ -18,6 +19,7 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/redis/go-redis v6.15.9+incompatible // indirect
 	github.com/redis/go-redis/v9 v9.0.2 // indirect
+	github.com/spyzhov/ajson v0.8.0 // indirect
 	golang.org/x/crypto v0.31.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
