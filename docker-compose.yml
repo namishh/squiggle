@@ -19,6 +19,7 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro # this creaate the table on intializing the app
 
   redis:
     image: redis:7.2-alpine

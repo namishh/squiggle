@@ -8,3 +8,6 @@
 !Dockerfile
 !docker-compose.yml
 !.env.sample
+
+!sql
+!sql/*
