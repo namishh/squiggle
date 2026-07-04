@@ -1,6 +1,6 @@
 ## squiggle
 
-squiggle is a tiny llm-moderated guestbook self hostable service build with golang and echo.
+squiggle is a tiny self hostable llm-moderated guestbook backend built with golang and echo.
 
 
 ### local quickstart 
@@ -33,7 +33,7 @@ docker compose exec -T postgres psql -U <DB_USER> -d <DB_NAME> < ./sql/seed.sql
 2. make a post request at `/entry`
 
 ```js
-const turnstileToken = document.querySelector('[name="cf-turnstile-response"]',).value;
+const turnstileToken = document.querySelector('[name="cf-turnstile-response"]').value;
 const res = await fetch(BASE_URL + "/entry", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
