@@ -7,7 +7,7 @@ create table if not exists entries (
     message text not null,
     site text,
     email varchar(255),
-    status varchar(20) not null default 'hidden',
+    status varchar(20) not null default 'visible', -- VISIBLE | HIDDEN | SPAM
     ip_hash varchar(255),
     user_agent text,
     sentiment_score real default 0.2,

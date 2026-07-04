@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/go-redis/redis_rate/v10"
 	"github.com/labstack/echo/v5"
@@ -35,7 +36,6 @@ func main() {
 
 	op = openrouter.New(openrouter.WithSecurity(os.Getenv("OPENROUTER_KEY")))
 
-	go runSentimentTest(context.Background())
 	rc = redis.NewClient(&redis.Options{
 		Addr: os.Getenv("REDIS_URL"),
 	})
@@ -48,12 +48,11 @@ func main() {
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: []string{"*"},
 	}))
-	e.Use(rateLimit)
 
 	e.GET("/", func(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"message": "Hello, World!"})
 	})
-	e.POST("/entry", handlePost)
+	e.POST("/entry", handlePost, rateLimit, ttCheck)
 
 	if err := e.Start(":8080"); err != nil {
 		e.Logger.Error("failed to start server", "error", err)
@@ -74,8 +73,47 @@ func rateLimit(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// ::HANDLERS
+func ttCheck(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		token := c.FormValue("cf-turnstile-response")
+		if token == "" {
+			var body struct {
+				TurnstileToken string `json:"turnstileToken"`
+			}
+			if err := c.Bind(&body); err == nil {
+				token = body.TurnstileToken
+			}
+		}
+		if token == "" {
+			log.Println("missing turnstile token")
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "missing captcha token"})
+		}
 
+		ok, err := ttverify(c.Request().Context(), token, c.RealIP())
+
+		if err != nil {
+			log.Printf("turnstile verification failed for IP %s: %v \n", c.RealIP(), err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"error": "captcha verification failed",
+			})
+		}
+
+		if !ok {
+			log.Println("rate limit exceeded:", c.RealIP())
+			return c.JSON(http.StatusForbidden, map[string]string{
+				"error": "captcha verification failed",
+			})
+		}
+		return next(c)
+	}
+}
+
+// ::HANDLERS
+func handlePost(c *echo.Context) error {
+	return c.JSON(http.StatusOK, map[string]string{"message": "received a post request!"})
+}
+
+// ::HELPERS
 func getSentimentScore(c context.Context, text string) (int, error) {
 	res, err := op.Chat.Send(c, components.ChatRequest{
 		Model: new("openai/gpt-oss-20b"),
@@ -132,36 +170,47 @@ Respond with ONLY the integer score (0-20). No words, no explanation, no punctua
 	return score, err
 }
 
-var testEntries = []string{
-	"you mf this website is soooo good",
+type ttresponse struct {
+	Success bool     `json:"success"`
+	Errors  []string `json:"error-codes"`
 }
 
-func runSentimentTest(ctx context.Context) {
-	var wg sync.WaitGroup
-	results := make([]int, len(testEntries))
-	errs := make([]error, len(testEntries))
-
-	for i, entry := range testEntries {
-		wg.Add(1)
-		go func(i int, text string) {
-			defer wg.Done()
-			score, err := getSentimentScore(ctx, text)
-			results[i] = score
-			errs[i] = err
-		}(i, entry)
+func ttverify(ctx context.Context, token string, remoteIp string) (bool, error) {
+	tsecret := os.Getenv("TURNSTILE_SECRET")
+	if os.Getenv("ENVIRONMENT") == "dev" {
+		tsecret = os.Getenv("TURNSTILE_DEMO")
 	}
 
-	wg.Wait()
-
-	for i, entry := range testEntries {
-		if errs[i] != nil {
-			fmt.Printf("Entry: %q -> ERROR: %v\n", entry, errs[i])
-			continue
-		}
-		fmt.Printf("Entry: %q -> Score: %d\n", entry, results[i])
+	log.Println(tsecret)
+	form := url.Values{
+		"secret":   {tsecret},
+		"response": {token},
+		"remoteip": {remoteIp},
 	}
-}
 
-func handlePost(c *echo.Context) error {
-	return c.JSON(http.StatusOK, map[string]string{"message": "received a post request!"})
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://challenges.cloudflare.com/turnstile/v0/siteverify", strings.NewReader(form.Encode()))
+	if err != nil {
+		return false, err
+	}
+
+	req.URL.RawQuery = form.Encode()
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+
+	defer resp.Body.Close()
+
+	var result ttresponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, err
+	}
+
+	if !result.Success {
+		return false, fmt.Errorf("turnstile failed: %v", result.Errors)
+	}
+
+	return true, nil
 }
