@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/go-redis/redis_rate/v10"
@@ -175,6 +176,17 @@ func handlePost(c *echo.Context) error {
 		ID string
 	}
 
+	var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+	if postreq.Email != "" && !emailRegex.MatchString(postreq.Email) {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid email"})
+	}
+
+	var siteRegex = regexp.MustCompile(`^[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}(/.*)?$`)
+
+	postreq.Site = normalizeSite(postreq.Site)
+	if postreq.Site != "" && !siteRegex.MatchString(postreq.Site) {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid site"})
+	}
 	result := db.Table("entries").Create(map[string]any{
 		"name":       postreq.Name,
 		"email":      postreq.Email,
@@ -193,10 +205,10 @@ func handlePost(c *echo.Context) error {
 		Where("ip_hash = ? AND created_at = (SELECT MAX(created_at) FROM entries WHERE ip_hash = ?)", ipHash, ipHash).
 		Pluck("id", &entry.ID)
 
-	go func(id, message, ipHash string) {
+	go func(id, message, name, site, ipHash string) {
 		bgctx := context.Background()
 		log.Printf("[SENTIMENT] scoring id=%s", entry.ID)
-		score, err := getSentimentScore(bgctx, message)
+		score, err := getSentimentScore(bgctx, message, name, site)
 		if err != nil {
 			log.Printf("[SENTIMENT] error id=%s err=%v", entry.ID, err)
 			return
@@ -204,12 +216,18 @@ func handlePost(c *echo.Context) error {
 		log.Printf("[SENTIMENT] id=%s score=%d", entry.ID, score)
 		moderate(id, ipHash, score)
 
-	}(entry.ID, postreq.Message, ipHash)
+	}(entry.ID, postreq.Message, postreq.Name, postreq.Site, ipHash)
 
 	return c.JSON(http.StatusCreated, map[string]string{"status": "posted"})
 }
 
 // ::HELPERS
+
+func normalizeSite(site string) string {
+	site = strings.TrimPrefix(site, "https://")
+	site = strings.TrimPrefix(site, "http://")
+	return site
+}
 
 func hashIP(ip string) string {
 	salt := os.Getenv("IP_SALT")
@@ -245,7 +263,7 @@ func moderate(entryID, ipHash string, score int) {
 
 }
 
-func getSentimentScore(c context.Context, text string) (int, error) {
+func getSentimentScore(c context.Context, text, name, site string) (int, error) {
 	res, err := op.Chat.Send(c, components.ChatRequest{
 		Model: new("openai/gpt-oss-20b"),
 		Messages: []components.ChatMessages{
@@ -271,6 +289,8 @@ Guidelines:
 
 Respond with ONLY the integer score (0-20). No words, no explanation, no punctuation.
 
+<name>` + name + `</name>
+<website>` + site + `</website>
 <comment>` + text + `</comment>`,
 					),
 					Role: components.ChatUserMessageRoleUser,
