@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -21,6 +23,11 @@ import (
 	"gorm.io/gorm"
 )
 
+// ::CONSTANTS
+var SPAM_THRESHOLD = 3
+var HIDE_THRESHOLD = 6
+
+// ::GLOBALS
 var rc *redis.Client
 var rl *redis_rate.Limiter
 var op *openrouter.OpenRouter
@@ -46,14 +53,16 @@ func main() {
 	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
 
-	allowedOrigins := []string{"http://localhost:*", "http://127.0.0.1:*", "null"}
-
-	if os.Getenv("ENVIRONMENT") == "prod" {
-		allowedOrigins = []string{os.Getenv("ALLOWED_ORIGIN")}
-	}
-
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: allowedOrigins,
+		UnsafeAllowOriginFunc: func(c *echo.Context, origin string) (string, bool, error) {
+			if os.Getenv("ENVIRONMENT") != "prod" {
+				return origin, true, nil
+			}
+			allowed := os.Getenv("ALLOWED_ORIGIN")
+			return allowed, origin == allowed, nil
+		},
+		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodOptions},
+		AllowHeaders: []string{"Content-Type"},
 	}))
 
 	e.GET("/", func(c *echo.Context) error {
@@ -82,14 +91,14 @@ func rateLimit(next echo.HandlerFunc) echo.HandlerFunc {
 
 func ttCheck(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
-		token := c.FormValue("cf-turnstile-response")
+		var req EntryRequest
+		if err := c.Bind(&req); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		}
+
+		token := req.TurnstileToken
 		if token == "" {
-			var body struct {
-				TurnstileToken string `json:"turnstileToken"`
-			}
-			if err := c.Bind(&body); err == nil {
-				token = body.TurnstileToken
-			}
+			token = c.FormValue("cf-turnstile-response")
 		}
 		if token == "" {
 			log.Println("missing turnstile token")
@@ -97,27 +106,27 @@ func ttCheck(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 
 		ok, err := ttverify(c.Request().Context(), token, c.RealIP())
-
 		if err != nil {
 			log.Printf("turnstile verification failed for IP %s: %v \n", c.RealIP(), err)
 			return c.JSON(http.StatusInternalServerError, map[string]string{
 				"error": "captcha verification failed",
 			})
 		}
-
 		if !ok {
 			log.Println("rate limit exceeded:", c.RealIP())
 			return c.JSON(http.StatusForbidden, map[string]string{
 				"error": "captcha verification failed",
 			})
 		}
+
+		c.Set("postreq", req.PostRequest)
 		return next(c)
 	}
 }
 
 func checkOrigin(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
-		if os.Getenv("ENV") != "prod" {
+		if os.Getenv("ENVIRONMENT") != "prod" {
 			return next(c)
 		}
 
@@ -137,11 +146,105 @@ func checkOrigin(next echo.HandlerFunc) echo.HandlerFunc {
 }
 
 // ::HANDLERS
+
+type PostRequest struct {
+	Name    string `json:"name"`
+	Email   string `json:"email"`
+	Message string `json:"message"`
+	Site    string `json:"site"`
+}
+
+type EntryRequest struct {
+	PostRequest
+	TurnstileToken string `json:"turnstileToken"`
+}
+
 func handlePost(c *echo.Context) error {
-	return c.JSON(http.StatusOK, map[string]string{"message": "received a post request!"})
+	postreq, ok := c.Get("postreq").(PostRequest)
+	if !ok {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
+	}
+	if postreq.Name == "" || postreq.Message == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "name and message are required"})
+	}
+	ip := c.RealIP()
+	ipHash := hashIP(ip)
+	userAgent := c.Request().UserAgent()
+
+	var entry struct {
+		ID string
+	}
+
+	result := db.Table("entries").Create(map[string]any{
+		"name":       postreq.Name,
+		"email":      postreq.Email,
+		"site":       postreq.Site,
+		"message":    postreq.Message,
+		"ip_hash":    ipHash,
+		"user_agent": userAgent,
+	})
+
+	if result.Error != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save entry"})
+	}
+	log.Printf("[INSERT] id=%s name=%s ip_hash=%s", entry.ID, postreq.Name, ipHash)
+
+	db.Table("entries").
+		Where("ip_hash = ? AND created_at = (SELECT MAX(created_at) FROM entries WHERE ip_hash = ?)", ipHash, ipHash).
+		Pluck("id", &entry.ID)
+
+	go func(id, message, ipHash string) {
+		bgctx := context.Background()
+		log.Printf("[SENTIMENT] scoring id=%s", entry.ID)
+		score, err := getSentimentScore(bgctx, message)
+		if err != nil {
+			log.Printf("[SENTIMENT] error id=%s err=%v", entry.ID, err)
+			return
+		}
+		log.Printf("[SENTIMENT] id=%s score=%d", entry.ID, score)
+		moderate(id, ipHash, score)
+
+	}(entry.ID, postreq.Message, ipHash)
+
+	return c.JSON(http.StatusCreated, map[string]string{"status": "posted"})
 }
 
 // ::HELPERS
+
+func hashIP(ip string) string {
+	salt := os.Getenv("IP_SALT")
+	sum := sha256.Sum256([]byte(ip + salt))
+	return hex.EncodeToString(sum[:])
+}
+
+func moderate(entryID, ipHash string, score int) {
+	var status string
+
+	switch {
+	case score < SPAM_THRESHOLD:
+		status = "spam"
+	case score < HIDE_THRESHOLD:
+		status = "hidden"
+	default:
+		status = "visible"
+	}
+
+	if status == "spam" {
+		db.Table("entries").Exec(`INSERT INTO defaulters (ip_hash, low_sentiment_count, last_offense_at)
+		VALUES ($1, 1, now())
+		ON CONFLICT (ip_hash) DO UPDATE
+		SET low_sentiment_count = defaulters.low_sentiment_count + 1,
+		    last_offense_at = now(),
+		    banned = (defaulters.low_sentiment_count + 1) >= 5
+`, ipHash)
+	}
+	log.Printf("[MODERATION] id=%s status=%s score=%d", entryID, status, score)
+	log.Printf("[MODERATION] defaulter updated ip_hash=%s", ipHash)
+
+	db.Table("entries").Exec(`UPDATE entries SET sentiment_score = $1, status = $2 WHERE id = $3`, score, status, entryID)
+
+}
+
 func getSentimentScore(c context.Context, text string) (int, error) {
 	res, err := op.Chat.Send(c, components.ChatRequest{
 		Model: new("openai/gpt-oss-20b"),
@@ -198,7 +301,7 @@ Respond with ONLY the integer score (0-20). No words, no explanation, no punctua
 	return score, err
 }
 
-type ttresponse struct {
+type TTResponse struct {
 	Success bool     `json:"success"`
 	Errors  []string `json:"error-codes"`
 }
@@ -231,7 +334,7 @@ func ttverify(ctx context.Context, token string, remoteIp string) (bool, error) 
 
 	defer resp.Body.Close()
 
-	var result ttresponse
+	var result TTResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return false, err
 	}
