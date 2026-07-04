@@ -70,6 +70,8 @@ func main() {
 		return c.JSON(http.StatusOK, map[string]string{"message": "Hello, World!"})
 	})
 	e.POST("/entry", handlePost, rateLimit, checkBanned, ttCheck, checkOrigin)
+	//	e.GET("/entries", listEntries)
+	e.GET("/entry/count", countEntries)
 
 	if err := e.Start(":8080"); err != nil {
 		e.Logger.Error("failed to start server", "error", err)
@@ -244,6 +246,18 @@ func handlePost(c *echo.Context) error {
 	return c.JSON(http.StatusCreated, map[string]string{"status": "posted"})
 }
 
+func countEntries(c *echo.Context) error {
+	ctx := c.Request().Context()
+	var count int
+
+	err := db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM entries WHERE status = 'visible'`).Scan(&count).Error
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "count failed"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]int{"count": count})
+}
+
 // ::HELPERS
 
 func normalizeSite(site string) string {
@@ -355,7 +369,6 @@ func ttverify(ctx context.Context, token string, remoteIp string) (bool, error) 
 		tsecret = os.Getenv("TURNSTILE_DEMO")
 	}
 
-	log.Println(tsecret)
 	form := url.Values{
 		"secret":   {tsecret},
 		"response": {token},
