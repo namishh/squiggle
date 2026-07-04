@@ -69,7 +69,7 @@ func main() {
 	e.GET("/", func(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"message": "Hello, World!"})
 	})
-	e.POST("/entry", handlePost, rateLimit, ttCheck, checkOrigin)
+	e.POST("/entry", handlePost, rateLimit, checkBanned, ttCheck, checkOrigin)
 
 	if err := e.Start(":8080"); err != nil {
 		e.Logger.Error("failed to start server", "error", err)
@@ -86,6 +86,29 @@ func rateLimit(next echo.HandlerFunc) echo.HandlerFunc {
 		if res.Allowed == 0 {
 			return c.JSON(http.StatusTooManyRequests, map[string]string{"message": "rate limit exceeded"})
 		}
+		return next(c)
+	}
+}
+
+func checkBanned(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		ipHash := hashIP(c.RealIP())
+		var banned bool
+
+		err := db.Table("defaulters").
+			Select("banned").
+			Where("ip_hash = ?", ipHash).
+			Scan(&banned).Error
+
+		if err != nil {
+			log.Printf("[BAN CHECK] error checking ip_hash=%s err=%v", ipHash, err)
+			return next(c) // fail open, don't block legit users on db error
+		}
+
+		if banned {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "you are banned from posting"})
+		}
+
 		return next(c)
 	}
 }
@@ -253,7 +276,7 @@ func moderate(entryID, ipHash string, score int) {
 		ON CONFLICT (ip_hash) DO UPDATE
 		SET low_sentiment_count = defaulters.low_sentiment_count + 1,
 		    last_offense_at = now(),
-		    banned = (defaulters.low_sentiment_count + 1) >= 5
+		    banned = (defaulters.low_sentiment_count + 1) >= 3
 `, ipHash)
 	}
 	log.Printf("[MODERATION] id=%s status=%s score=%d", entryID, status, score)
@@ -265,7 +288,7 @@ func moderate(entryID, ipHash string, score int) {
 
 func getSentimentScore(c context.Context, text, name, site string) (int, error) {
 	res, err := op.Chat.Send(c, components.ChatRequest{
-		Model: new("openai/gpt-oss-20b"),
+		Model: new(os.Getenv("OPENROUTER_MODEL")),
 		Messages: []components.ChatMessages{
 			components.CreateChatMessagesUser(
 				components.ChatUserMessage{
