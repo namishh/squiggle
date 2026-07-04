@@ -27,7 +27,7 @@ docker compose exec -T postgres psql -U <DB_USER> -d <DB_NAME> < ./sql/seed.sql
 ```html
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 
-  <div class="cf-turnstile data-sitekey="1x00000000000000000000AA"></div>
+  <div class="cf-turnstile" data-sitekey="1x00000000000000000000AA"></div>
 ```
 
 2. make a post request at `/entry`
