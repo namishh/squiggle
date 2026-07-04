@@ -45,14 +45,21 @@ func main() {
 	rl = redis_rate.NewLimiter(rc)
 	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
+
+	allowedOrigins := []string{"http://localhost:*", "http://127.0.0.1:*", "null"}
+
+	if os.Getenv("ENVIRONMENT") == "prod" {
+		allowedOrigins = []string{os.Getenv("ALLOWED_ORIGIN")}
+	}
+
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{"*"},
+		AllowOrigins: allowedOrigins,
 	}))
 
 	e.GET("/", func(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"message": "Hello, World!"})
 	})
-	e.POST("/entry", handlePost, rateLimit, ttCheck)
+	e.POST("/entry", handlePost, rateLimit, ttCheck, checkOrigin)
 
 	if err := e.Start(":8080"); err != nil {
 		e.Logger.Error("failed to start server", "error", err)
@@ -105,6 +112,27 @@ func ttCheck(next echo.HandlerFunc) echo.HandlerFunc {
 			})
 		}
 		return next(c)
+	}
+}
+
+func checkOrigin(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		if os.Getenv("ENV") != "prod" {
+			return next(c)
+		}
+
+		origin := c.Request().Header.Get("Origin")
+		referer := c.Request().Header.Get("Referer")
+		allowed := os.Getenv("ALLOWED_ORIGIN")
+
+		if origin != "" && strings.HasPrefix(origin, allowed) {
+			return next(c)
+		}
+		if referer != "" && strings.HasPrefix(referer, allowed) {
+			return next(c)
+		}
+
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "invalid origin"})
 	}
 }
 
