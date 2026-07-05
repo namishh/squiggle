@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -36,6 +37,35 @@ var db *gorm.DB
 
 var logger *slog.Logger
 
+type ErrorResponse struct {
+	Error string `json:"error"`
+	Code  string `json:"code"`
+}
+
+type SquiggleError struct {
+	Status  int
+	Message string
+	Code    string
+}
+
+func (e *SquiggleError) Error() string { return e.Message }
+
+var (
+	ErrRateLimited    = &SquiggleError{http.StatusTooManyRequests, "rate limit exceeded", "rate_limited"}
+	ErrBanned         = &SquiggleError{http.StatusForbidden, "you are banned from posting", "banned"}
+	ErrInvalidCaptcha = &SquiggleError{http.StatusForbidden, "captcha verification failed", "invalid_captcha"}
+	ErrInvalidOrigin  = &SquiggleError{http.StatusForbidden, "invalid origin", "invalid_origin"}
+	ErrInternal       = &SquiggleError{http.StatusInternalServerError, "internal error", "internal_error"}
+	ErrEmail          = &SquiggleError{http.StatusBadRequest, "invalid email", "invalid_email"}
+	ErrSite           = &SquiggleError{http.StatusBadRequest, "invalid site", "invalid_site"}
+	ErrDetails        = &SquiggleError{http.StatusBadRequest, "name and message are mandatory ", "invalid_validation"}
+	ErrEntryPost      = &SquiggleError{http.StatusBadRequest, "failed to save the entry ", "post_failure"}
+)
+
+func ErrValidation(msg string) error {
+	return &SquiggleError{http.StatusBadRequest, msg, "validation_error"}
+}
+
 func main() {
 	logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -59,6 +89,35 @@ func main() {
 		os.Exit(1)
 	}
 	rl = redis_rate.NewLimiter(rc)
+
+	e.HTTPErrorHandler = func(c *echo.Context, err error) {
+		if resp, uErr := echo.UnwrapResponse(c.Response()); uErr == nil {
+			if resp.Committed {
+				return
+			}
+		}
+
+		status := http.StatusInternalServerError
+		msg := "internal error"
+		code := "internal_error"
+
+		if se, ok := errors.AsType[*SquiggleError](err); ok {
+			status = se.Status
+			msg = se.Message
+			code = se.Code
+		}
+
+		logger.Error("request failed",
+			"path", c.Request().URL.Path,
+			"status", status,
+			"code", code,
+			"err", err,
+		)
+
+		c.JSON(status, ErrorResponse{Error: msg, Code: code})
+
+	}
+
 	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
 
@@ -76,7 +135,7 @@ func main() {
 
 	e.GET("/", func(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"message": "Hello, World!"})
-	})
+	}, rateLimit)
 	e.POST("/entry", handlePost, rateLimit, checkBanned, ttCheck, checkOrigin)
 	//	e.GET("/entries", listEntries)
 	e.GET("/entry/count", countEntries)
@@ -94,7 +153,7 @@ func rateLimit(next echo.HandlerFunc) echo.HandlerFunc {
 			return err
 		}
 		if res.Allowed == 0 {
-			return c.JSON(http.StatusTooManyRequests, map[string]string{"error": "Rate Limit Exceeded"})
+			return ErrRateLimited
 		}
 		return next(c)
 	}
@@ -116,7 +175,7 @@ func checkBanned(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 
 		if banned {
-			return c.JSON(http.StatusForbidden, map[string]string{"error": "you are banned from posting"})
+			return ErrBanned
 		}
 
 		return next(c)
@@ -127,7 +186,7 @@ func ttCheck(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		var req EntryRequest
 		if err := c.Bind(&req); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid Request"})
+			return ErrInvalidCaptcha
 		}
 
 		token := req.TurnstileToken
@@ -136,21 +195,17 @@ func ttCheck(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 		if token == "" {
 			logger.Error("[SECURITY]: Turnstile token missing")
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Missing Captcha Token"})
+			return ErrInvalidCaptcha
 		}
 
 		ok, err := ttverify(c.Request().Context(), token, c.RealIP())
 		if err != nil {
 			logger.Error("[SECURITY]: Turnstile Verification failed.", "err", err, "ip", c.RealIP())
-			return c.JSON(http.StatusInternalServerError, map[string]string{
-				"error": "captcha verification failed",
-			})
+			return ErrInvalidCaptcha
 		}
 		if !ok {
 			logger.Error("[SECURITY]: Rate Limit Exceeded.", "ip", c.RealIP())
-			return c.JSON(http.StatusForbidden, map[string]string{
-				"error": "captcha verification failed",
-			})
+			return ErrInvalidCaptcha
 		}
 
 		c.Set("postreq", req.PostRequest)
@@ -175,7 +230,7 @@ func checkOrigin(next echo.HandlerFunc) echo.HandlerFunc {
 			return next(c)
 		}
 
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "invalid origin"})
+		return ErrInvalidOrigin
 	}
 }
 
@@ -196,47 +251,51 @@ type EntryRequest struct {
 func handlePost(c *echo.Context) error {
 	postreq, ok := c.Get("postreq").(PostRequest)
 	if !ok {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return ErrInternal
 	}
 	if postreq.Name == "" || postreq.Message == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "name and message are required"})
+		return ErrDetails
 	}
 	ip := c.RealIP()
 	ipHash := hashIP(ip)
 	userAgent := c.Request().UserAgent()
 
-	var entry struct {
-		ID string
-	}
-
 	var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
 	if postreq.Email != "" && !emailRegex.MatchString(postreq.Email) {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid email"})
+		return ErrEmail
 	}
 
 	var siteRegex = regexp.MustCompile(`^[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}(/.*)?$`)
 
 	postreq.Site = normalizeSite(postreq.Site)
 	if postreq.Site != "" && !siteRegex.MatchString(postreq.Site) {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid site"})
+		return ErrSite
 	}
-	result := db.Table("entries").Create(map[string]any{
-		"name":       postreq.Name,
-		"email":      postreq.Email,
-		"site":       postreq.Site,
-		"message":    postreq.Message,
-		"ip_hash":    ipHash,
-		"user_agent": userAgent,
-	})
 
+	type Entry struct {
+		ID        string
+		Name      string
+		Email     string
+		Site      string
+		Message   string
+		IPHash    string
+		UserAgent string
+	}
+
+	entry := Entry{
+		Name:      postreq.Name,
+		Email:     postreq.Email,
+		Site:      postreq.Site,
+		Message:   postreq.Message,
+		IPHash:    ipHash,
+		UserAgent: userAgent,
+	}
+
+	result := db.Table("entries").Create(&entry)
 	if result.Error != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save entry"})
+		return ErrEntryPost
 	}
 	logger.Info("[INSERT] New guestbook entry", "id", entry.ID, "name", postreq.Name, "ip_hash", ipHash)
-
-	db.Table("entries").
-		Where("ip_hash = ? AND created_at = (SELECT MAX(created_at) FROM entries WHERE ip_hash = ?)", ipHash, ipHash).
-		Pluck("id", &entry.ID)
 
 	go func(id, message, name, site, ipHash string) {
 		bgctx := context.Background()
@@ -258,7 +317,7 @@ func countEntries(c *echo.Context) error {
 
 	err := db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM entries WHERE status = 'visible'`).Scan(&count).Error
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "count failed"})
+		return ErrInternal
 	}
 
 	return c.JSON(http.StatusOK, map[string]int{"count": count})
