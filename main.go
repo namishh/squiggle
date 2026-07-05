@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -141,7 +142,7 @@ func main() {
 
 	e.GET("/", func(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"message": "Hello, World!"})
-	}, rateLimit)
+	})
 	e.POST("/entry", handlePost, rateLimit, checkBanned, ttCheck, checkOrigin)
 	//	e.GET("/entries", listEntries)
 	e.GET("/entry/count", countEntries)
@@ -171,7 +172,7 @@ func main() {
 // ::MIDDLEWARES
 func rateLimit(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
-		res, err := rl.Allow(c.Request().Context(), c.RealIP(), redis_rate.PerMinute(10))
+		res, err := rl.Allow(c.Request().Context(), directIP(c), redis_rate.PerMinute(10))
 		if err != nil {
 			return err
 		}
@@ -184,7 +185,7 @@ func rateLimit(next echo.HandlerFunc) echo.HandlerFunc {
 
 func checkBanned(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
-		ipHash := hashIP(c.RealIP())
+		ipHash := hashIP(directIP(c))
 		var banned bool
 
 		err := db.Table("defaulters").
@@ -221,14 +222,14 @@ func ttCheck(next echo.HandlerFunc) echo.HandlerFunc {
 			return ErrInvalidCaptcha
 		}
 
-		ok, err := ttverify(c.Request().Context(), token, c.RealIP())
+		ok, err := ttverify(c.Request().Context(), token, directIP(c))
 		if err != nil {
-			logger.Error("[SECURITY]: Turnstile Verification failed.", "err", err, "ip", c.RealIP())
+			logger.Error("[SECURITY]: Turnstile Verification failed.", "err", err, "ip", directIP(c))
 			return ErrInvalidCaptcha
 		}
 		if !ok {
-			logger.Error("[SECURITY]: Rate Limit Exceeded.", "ip", c.RealIP())
-			return ErrInvalidCaptcha
+			logger.Error("[SECURITY]: Rate Limit Exceeded.", "ip", directIP(c))
+			return ErrRateLimited
 		}
 
 		c.Set("postreq", req.PostRequest)
@@ -277,7 +278,7 @@ func handlePost(c *echo.Context) error {
 		return ErrInternal
 	}
 
-	ip := c.RealIP()
+	ip := directIP(c)
 	ipHash := hashIP(ip)
 	userAgent := c.Request().UserAgent()
 
@@ -286,7 +287,7 @@ func handlePost(c *echo.Context) error {
 	}
 
 	type Entry struct {
-		ID        string
+		ID        string `gorm:"column:id;default:gen_random_uuid()"`
 		Name      string
 		Email     string
 		Site      string
@@ -368,7 +369,7 @@ func moderate(entryID, ipHash string, score int) {
 		ON CONFLICT (ip_hash) DO UPDATE
 		SET low_sentiment_count = defaulters.low_sentiment_count + 1,
 		    last_offense_at = now(),
-		    banned = (defaulters.low_sentiment_count + 1) >= 3
+		    banned = (defaulters.low_sentiment_count + 1) >= 2
 `, ipHash)
 	}
 
@@ -491,4 +492,12 @@ func validatePostRequest(p *PostRequest) error {
 	}
 
 	return nil
+}
+
+func directIP(c *echo.Context) string {
+	ip, _, err := net.SplitHostPort(c.Request().RemoteAddr)
+	if err != nil {
+		return c.Request().RemoteAddr
+	}
+	return ip
 }
