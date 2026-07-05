@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -34,12 +34,19 @@ var rl *redis_rate.Limiter
 var op *openrouter.OpenRouter
 var db *gorm.DB
 
+var logger *slog.Logger
+
 func main() {
+	logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+
 	e := echo.New()
 	var dberr error
 	db, dberr = gorm.Open(postgres.Open(os.Getenv("DATABASE_URL")), &gorm.Config{})
 	if dberr != nil {
-		log.Fatalln(dberr)
+		logger.Error("[STARTUP]: Connection to database failed", "err", dberr)
+		os.Exit(1)
 	}
 
 	op = openrouter.New(openrouter.WithSecurity(os.Getenv("OPENROUTER_KEY")))
@@ -48,7 +55,8 @@ func main() {
 		Addr: os.Getenv("REDIS_URL"),
 	})
 	if err := rc.Ping(context.Background()).Err(); err != nil {
-		e.Logger.Error("redis connection failed", "error", err)
+		logger.Error("[STARTUP]: Connection to redis failed", "err", err)
+		os.Exit(1)
 	}
 	rl = redis_rate.NewLimiter(rc)
 	e.Use(middleware.RequestLogger())
@@ -74,7 +82,7 @@ func main() {
 	e.GET("/entry/count", countEntries)
 
 	if err := e.Start(":8080"); err != nil {
-		e.Logger.Error("failed to start server", "error", err)
+		logger.Error("[STARTUP]: Failed to start the server", "err", err)
 	}
 }
 
@@ -86,7 +94,7 @@ func rateLimit(next echo.HandlerFunc) echo.HandlerFunc {
 			return err
 		}
 		if res.Allowed == 0 {
-			return c.JSON(http.StatusTooManyRequests, map[string]string{"message": "rate limit exceeded"})
+			return c.JSON(http.StatusTooManyRequests, map[string]string{"error": "Rate Limit Exceeded"})
 		}
 		return next(c)
 	}
@@ -103,7 +111,7 @@ func checkBanned(next echo.HandlerFunc) echo.HandlerFunc {
 			Scan(&banned).Error
 
 		if err != nil {
-			log.Printf("[BAN CHECK] error checking ip_hash=%s err=%v", ipHash, err)
+			logger.Warn("[BAN CHECK] error checking", "err", err, "ip_hash", ipHash)
 			return next(c) // fail open, don't block legit users on db error
 		}
 
@@ -119,7 +127,7 @@ func ttCheck(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		var req EntryRequest
 		if err := c.Bind(&req); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid Request"})
 		}
 
 		token := req.TurnstileToken
@@ -127,19 +135,19 @@ func ttCheck(next echo.HandlerFunc) echo.HandlerFunc {
 			token = c.FormValue("cf-turnstile-response")
 		}
 		if token == "" {
-			log.Println("missing turnstile token")
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "missing captcha token"})
+			logger.Error("[SECURITY]: Turnstile token missing")
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Missing Captcha Token"})
 		}
 
 		ok, err := ttverify(c.Request().Context(), token, c.RealIP())
 		if err != nil {
-			log.Printf("turnstile verification failed for IP %s: %v \n", c.RealIP(), err)
+			logger.Error("[SECURITY]: Turnstile Verification failed.", "err", err, "ip", c.RealIP())
 			return c.JSON(http.StatusInternalServerError, map[string]string{
 				"error": "captcha verification failed",
 			})
 		}
 		if !ok {
-			log.Println("rate limit exceeded:", c.RealIP())
+			logger.Error("[SECURITY]: Rate Limit Exceeded.", "ip", c.RealIP())
 			return c.JSON(http.StatusForbidden, map[string]string{
 				"error": "captcha verification failed",
 			})
@@ -224,7 +232,7 @@ func handlePost(c *echo.Context) error {
 	if result.Error != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save entry"})
 	}
-	log.Printf("[INSERT] id=%s name=%s ip_hash=%s", entry.ID, postreq.Name, ipHash)
+	logger.Info("[INSERT] New guestbook entry", "id", entry.ID, "name", postreq.Name, "ip_hash", ipHash)
 
 	db.Table("entries").
 		Where("ip_hash = ? AND created_at = (SELECT MAX(created_at) FROM entries WHERE ip_hash = ?)", ipHash, ipHash).
@@ -232,13 +240,11 @@ func handlePost(c *echo.Context) error {
 
 	go func(id, message, name, site, ipHash string) {
 		bgctx := context.Background()
-		log.Printf("[SENTIMENT] scoring id=%s", entry.ID)
 		score, err := getSentimentScore(bgctx, message, name, site)
 		if err != nil {
-			log.Printf("[SENTIMENT] error id=%s err=%v", entry.ID, err)
+			logger.Error("[SENTIMENT] Error in getting sentiment score", "id", entry.ID, "err", err)
 			return
 		}
-		log.Printf("[SENTIMENT] id=%s score=%d", entry.ID, score)
 		moderate(id, ipHash, score)
 
 	}(entry.ID, postreq.Message, postreq.Name, postreq.Site, ipHash)
@@ -293,8 +299,6 @@ func moderate(entryID, ipHash string, score int) {
 		    banned = (defaulters.low_sentiment_count + 1) >= 3
 `, ipHash)
 	}
-	log.Printf("[MODERATION] id=%s status=%s score=%d", entryID, status, score)
-	log.Printf("[MODERATION] defaulter updated ip_hash=%s", ipHash)
 
 	db.Table("entries").Exec(`UPDATE entries SET sentiment_score = $1, status = $2 WHERE id = $3`, score, status, entryID)
 
