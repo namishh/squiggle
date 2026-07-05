@@ -144,7 +144,7 @@ func main() {
 		return c.JSON(http.StatusOK, map[string]string{"message": "Hello, World!"})
 	})
 	e.POST("/entry", handlePost, rateLimit, checkBanned, ttCheck, checkOrigin)
-	//	e.GET("/entries", listEntries)
+	e.GET("/entries", listEntries)
 	e.GET("/entry/count", countEntries)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -335,6 +335,39 @@ func countEntries(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]int{"count": count})
+}
+
+func listEntries(c *echo.Context) error {
+	ctx := c.Request().Context()
+
+	type Entry struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Site    string `json:"site"`
+		Message string `json:"message"`
+	}
+
+	var visible []Entry
+	var hidden []Entry
+
+	if err := db.WithContext(ctx).Table("entries").
+		Where("status = ?", "visible").
+		Order("created_at desc").
+		Find(&visible).Error; err != nil {
+		return ErrInternal
+	}
+
+	if err := db.WithContext(ctx).Table("entries").
+		Where("status = ?", "hidden").
+		Order("created_at desc").
+		Find(&hidden).Error; err != nil {
+		return ErrInternal
+	}
+
+	return c.JSON(http.StatusOK, map[string][]Entry{
+		"visible": visible,
+		"hidden":  hidden,
+	})
 }
 
 // ::HELPERS
