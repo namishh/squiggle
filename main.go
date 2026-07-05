@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -20,13 +21,14 @@ import (
 
 	"github.com/go-redis/redis_rate/v10"
 	"github.com/labstack/echo/v5"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/uptrace/bun/driver/pgdriver"
 
 	openrouter "github.com/OpenRouterTeam/go-sdk"
 	"github.com/OpenRouterTeam/go-sdk/models/components"
 	"github.com/labstack/echo/v5/middleware"
 	"github.com/redis/go-redis/v9"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 // ::CONSTANTS
@@ -37,7 +39,7 @@ var HIDE_THRESHOLD = 6
 var rc *redis.Client
 var rl *redis_rate.Limiter
 var op *openrouter.OpenRouter
-var db *gorm.DB
+var db *bun.DB
 
 var logger *slog.Logger
 
@@ -79,12 +81,9 @@ func main() {
 	}))
 
 	e := echo.New()
-	var dberr error
-	db, dberr = gorm.Open(postgres.Open(os.Getenv("DATABASE_URL")), &gorm.Config{})
-	if dberr != nil {
-		logger.Error("[STARTUP]: Connection to database failed", "err", dberr)
-		os.Exit(1)
-	}
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(os.Getenv("DATABASE_URL"))))
+
+	db = bun.NewDB(sqldb, pgdialect.New())
 
 	op = openrouter.New(openrouter.WithSecurity(os.Getenv("OPENROUTER_KEY")))
 
@@ -144,7 +143,7 @@ func main() {
 		return c.JSON(http.StatusOK, map[string]string{"message": "Hello, World!"})
 	})
 	e.POST("/entry", handlePost, rateLimit, checkBanned, ttCheck, checkOrigin)
-	e.GET("/entries", listEntries)
+	e.GET("/entry", listEntries)
 	e.GET("/entry/count", countEntries)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -161,10 +160,9 @@ func main() {
 	if err := rc.Close(); err != nil {
 		logger.Error("[SHUTDOWN]: redis close error", "err", err)
 	}
-	if sqlDB, err := db.DB(); err == nil {
-		sqlDB.Close()
-	} else {
-		logger.Error("[SHUTDOWN]: could not get sql.DB for close", "err", err)
+
+	if err := db.Close(); err != nil {
+		logger.Error("[SHUTDOWN]: db close error", "err", err)
 	}
 
 }
@@ -188,10 +186,7 @@ func checkBanned(next echo.HandlerFunc) echo.HandlerFunc {
 		ipHash := hashIP(directIP(c))
 		var banned bool
 
-		err := db.Table("defaulters").
-			Select("banned").
-			Where("ip_hash = ?", ipHash).
-			Scan(&banned).Error
+		err := db.NewSelect().Table("defaulters").ColumnExpr("banned").Where("ip_hash = ?", ipHash).Scan(c.Request().Context(), &banned)
 
 		if err != nil {
 			logger.Warn("[BAN CHECK] error checking", "err", err, "ip_hash", ipHash)
@@ -287,13 +282,15 @@ func handlePost(c *echo.Context) error {
 	}
 
 	type Entry struct {
-		ID        string `gorm:"column:id;default:gen_random_uuid()"`
-		Name      string
-		Email     string
-		Site      string
-		Message   string
-		IPHash    string
-		UserAgent string
+		bun.BaseModel `bun:"table:entries"`
+
+		ID        string `bun:"id,pk,default:gen_random_uuid()"`
+		Name      string `bun:"name"`
+		Email     string `bun:"email"`
+		Site      string `bun:"site"`
+		Message   string `bun:"message"`
+		IPHash    string `bun:"ip_hash"`
+		UserAgent string `bun:"user_agent"`
 	}
 
 	entry := Entry{
@@ -305,8 +302,8 @@ func handlePost(c *echo.Context) error {
 		UserAgent: userAgent,
 	}
 
-	result := db.Table("entries").Create(&entry)
-	if result.Error != nil {
+	_, err := db.NewInsert().Model(&entry).Exec(c.Request().Context())
+	if err != nil {
 		return ErrEntryPost
 	}
 	logger.Info("[INSERT] New guestbook entry", "id", entry.ID, "name", postreq.Name, "ip_hash", ipHash)
@@ -329,7 +326,7 @@ func countEntries(c *echo.Context) error {
 	ctx := c.Request().Context()
 	var count int
 
-	err := db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM entries WHERE status = 'visible'`).Scan(&count).Error
+	err := db.NewRaw(`SELECT COUNT(*) FROM entries WHERE status = 'visible'`).Scan(ctx, &count)
 	if err != nil {
 		return ErrInternal
 	}
@@ -341,26 +338,27 @@ func listEntries(c *echo.Context) error {
 	ctx := c.Request().Context()
 
 	type Entry struct {
-		ID      string `json:"id"`
-		Name    string `json:"name"`
-		Site    string `json:"site"`
-		Message string `json:"message"`
+		bun.BaseModel `bun:"table:entries"`
+		ID            string `json:"id"`
+		Name          string `json:"name"`
+		Site          string `json:"site"`
+		Message       string `json:"message"`
 	}
 
 	var visible []Entry
 	var hidden []Entry
 
-	if err := db.WithContext(ctx).Table("entries").
+	if err := db.NewSelect().Model(&visible).
 		Where("status = ?", "visible").
-		Order("created_at desc").
-		Find(&visible).Error; err != nil {
+		Order("created_at DESC").
+		Scan(ctx); err != nil {
 		return ErrInternal
 	}
 
-	if err := db.WithContext(ctx).Table("entries").
+	if err := db.NewSelect().Model(&hidden).
 		Where("status = ?", "hidden").
-		Order("created_at desc").
-		Find(&hidden).Error; err != nil {
+		Order("created_at DESC").
+		Scan(ctx); err != nil {
 		return ErrInternal
 	}
 
@@ -397,17 +395,16 @@ func moderate(entryID, ipHash string, score int) {
 	}
 
 	if status == "spam" {
-		db.Table("entries").Exec(`INSERT INTO defaulters (ip_hash, low_sentiment_count, last_offense_at)
-		VALUES ($1, 1, now())
-		ON CONFLICT (ip_hash) DO UPDATE
-		SET low_sentiment_count = defaulters.low_sentiment_count + 1,
-		    last_offense_at = now(),
-		    banned = (defaulters.low_sentiment_count + 1) >= 2
-`, ipHash)
+		db.NewRaw(`INSERT INTO defaulters (ip_hash, low_sentiment_count, last_offense_at)
+VALUES (?, 1, now())
+ON CONFLICT (ip_hash) DO UPDATE
+SET low_sentiment_count = defaulters.low_sentiment_count + 1,
+    last_offense_at = now(),
+    banned = (defaulters.low_sentiment_count + 1) >= 2
+`, ipHash).Exec(context.Background())
 	}
 
-	db.Table("entries").Exec(`UPDATE entries SET sentiment_score = $1, status = $2 WHERE id = $3`, score, status, entryID)
-
+	db.NewRaw(`UPDATE entries SET sentiment_score = ?, status = ? WHERE id = ?`, score, status, entryID).Exec(context.Background())
 }
 
 func getSentimentScore(c context.Context, text, name, site string) (int, error) {
