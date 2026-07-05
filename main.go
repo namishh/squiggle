@@ -11,8 +11,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"regexp"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/go-redis/redis_rate/v10"
 	"github.com/labstack/echo/v5"
@@ -61,6 +64,9 @@ var (
 	ErrDetails        = &SquiggleError{http.StatusBadRequest, "name and message are mandatory ", "invalid_validation"}
 	ErrEntryPost      = &SquiggleError{http.StatusBadRequest, "failed to save the entry ", "post_failure"}
 )
+
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+var siteRegex = regexp.MustCompile(`^[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}(/.*)?$`)
 
 func ErrValidation(msg string) error {
 	return &SquiggleError{http.StatusBadRequest, msg, "validation_error"}
@@ -140,9 +146,26 @@ func main() {
 	//	e.GET("/entries", listEntries)
 	e.GET("/entry/count", countEntries)
 
-	if err := e.Start(":8080"); err != nil {
-		logger.Error("[STARTUP]: Failed to start the server", "err", err)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	sc := echo.StartConfig{
+		Address:         ":8080",
+		GracefulTimeout: 10 * time.Second,
 	}
+	if err := sc.Start(ctx, e); err != nil {
+		logger.Error("[STARTUP]: server error", "err", err)
+	}
+
+	if err := rc.Close(); err != nil {
+		logger.Error("[SHUTDOWN]: redis close error", "err", err)
+	}
+	if sqlDB, err := db.DB(); err == nil {
+		sqlDB.Close()
+	} else {
+		logger.Error("[SHUTDOWN]: could not get sql.DB for close", "err", err)
+	}
+
 }
 
 // ::MIDDLEWARES
@@ -253,23 +276,13 @@ func handlePost(c *echo.Context) error {
 	if !ok {
 		return ErrInternal
 	}
-	if postreq.Name == "" || postreq.Message == "" {
-		return ErrDetails
-	}
+
 	ip := c.RealIP()
 	ipHash := hashIP(ip)
 	userAgent := c.Request().UserAgent()
 
-	var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
-	if postreq.Email != "" && !emailRegex.MatchString(postreq.Email) {
-		return ErrEmail
-	}
-
-	var siteRegex = regexp.MustCompile(`^[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}(/.*)?$`)
-
-	postreq.Site = normalizeSite(postreq.Site)
-	if postreq.Site != "" && !siteRegex.MatchString(postreq.Site) {
-		return ErrSite
+	if err := validatePostRequest(&postreq); err != nil {
+		return err
 	}
 
 	type Entry struct {
@@ -463,4 +476,19 @@ func ttverify(ctx context.Context, token string, remoteIp string) (bool, error) 
 	}
 
 	return true, nil
+}
+
+func validatePostRequest(p *PostRequest) error {
+	if p.Name == "" || p.Message == "" {
+		return ErrDetails
+	}
+	if p.Email != "" && !emailRegex.MatchString(p.Email) {
+		return ErrEmail
+	}
+	p.Site = normalizeSite(p.Site)
+	if p.Site != "" && !siteRegex.MatchString(p.Site) {
+		return ErrSite
+	}
+
+	return nil
 }
