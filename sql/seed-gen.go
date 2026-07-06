@@ -148,7 +148,7 @@ func main() {
 
 	entryCount := 2000
 
-	f, err := os.Create("./sql/seed.sql")
+	f, err := os.Create("./seed.sql")
 	if err != nil {
 		panic(err)
 	}
