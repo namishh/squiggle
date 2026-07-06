@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"net/http"
@@ -7,7 +7,7 @@ import (
 	"github.com/labstack/echo/v5/middleware"
 )
 
-func (s *Server) registerRoutes(e *echo.Echo) {
+func (s *Server) RegisterRoutes(e *echo.Echo) {
 	e.HTTPErrorHandler = s.httpErrorHandler
 
 	e.Use(middleware.RequestLogger())

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
+	"github.com/namishh/squiggle/internal/config"
+	"github.com/namishh/squiggle/internal/server"
 )
 
 func main() {
@@ -16,7 +18,7 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 
-	cfg, err := LoadConfig()
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		logger.Error("[STARTUP]: invalid configuration", "err", err)
 		os.Exit(1)
@@ -25,7 +27,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv, err := NewServer(ctx, cfg, logger)
+	srv, err := server.NewServer(ctx, cfg, logger)
 	if err != nil {
 		logger.Error("[STARTUP]: failed to initialize server", "err", err)
 		os.Exit(1)
@@ -37,7 +39,7 @@ func main() {
 	}()
 
 	e := echo.New()
-	srv.registerRoutes(e)
+	srv.RegisterRoutes(e)
 
 	sc := echo.StartConfig{
 		Address:         ":" + cfg.Port,

@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 	openrouter "github.com/OpenRouterTeam/go-sdk"
 	"github.com/go-redis/redis_rate/v10"
+	"github.com/namishh/squiggle/internal/config"
 	"github.com/redis/go-redis/v9"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
@@ -16,7 +17,7 @@ import (
 )
 
 type Server struct {
-	cfg     Config
+	cfg     config.Config
 	db      *bun.DB
 	redis   *redis.Client
 	limiter *redis_rate.Limiter
@@ -24,7 +25,7 @@ type Server struct {
 	logger  *slog.Logger
 }
 
-func NewServer(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) {
+func NewServer(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Server, error) {
 	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(cfg.DatabaseURL)))
 	db := bun.NewDB(sqldb, pgdialect.New())
 

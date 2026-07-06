@@ -1,9 +1,9 @@
 *
 !.gitignore
 !go.mod
-!*.go
 !go.sum
-
+!.github
+!.github/*
 
 !Dockerfile
 !docker-compose.yml
@@ -11,5 +11,15 @@
 
 !sql
 !sql/init.sql
+!sql/*.go
+
+!cmd
+!cmd/main.go
+!internal
+!internal/config
+!internal/config/config.go
+
+!internal/server
+!internal/server/*.go
 
 !README.md
