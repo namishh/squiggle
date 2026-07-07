@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/labstack/echo/v5"
@@ -9,10 +10,11 @@ import (
 )
 
 type PostRequest struct {
-	Name    string `json:"name"`
-	Email   string `json:"email"`
-	Message string `json:"message"`
-	Site    string `json:"site"`
+	Name       string          `json:"name"`
+	Email      string          `json:"email"`
+	Message    string          `json:"message"`
+	Site       string          `json:"site"`
+	CustomData json.RawMessage `json:"customData,omitempty"`
 }
 
 type EntryRequest struct {
@@ -37,22 +39,24 @@ func (s *Server) handlePost(c *echo.Context) error {
 	type Entry struct {
 		bun.BaseModel `bun:"table:entries"`
 
-		ID        string `bun:"id,pk,default:gen_random_uuid()"`
-		Name      string `bun:"name"`
-		Email     string `bun:"email"`
-		Site      string `bun:"site"`
-		Message   string `bun:"message"`
-		IPHash    string `bun:"ip_hash"`
-		UserAgent string `bun:"user_agent"`
+		ID         string          `bun:"id,pk,default:gen_random_uuid()"`
+		Name       string          `bun:"name"`
+		Email      string          `bun:"email"`
+		CustomData json.RawMessage `bun:"custom_data,type:jsonb"`
+		Site       string          `bun:"site"`
+		Message    string          `bun:"message"`
+		IPHash     string          `bun:"ip_hash"`
+		UserAgent  string          `bun:"user_agent"`
 	}
 
 	entry := Entry{
-		Name:      postreq.Name,
-		Email:     postreq.Email,
-		Site:      postreq.Site,
-		Message:   postreq.Message,
-		IPHash:    ipHash,
-		UserAgent: userAgent,
+		Name:       postreq.Name,
+		Email:      postreq.Email,
+		Site:       postreq.Site,
+		Message:    postreq.Message,
+		CustomData: postreq.CustomData,
+		IPHash:     ipHash,
+		UserAgent:  userAgent,
 	}
 
 	_, err := s.db.NewInsert().Model(&entry).Exec(c.Request().Context())
@@ -92,10 +96,11 @@ func (s *Server) listEntries(c *echo.Context) error {
 
 	type Entry struct {
 		bun.BaseModel `bun:"table:entries"`
-		ID            string `json:"id"`
-		Name          string `json:"name"`
-		Site          string `json:"site"`
-		Message       string `json:"message"`
+		ID            string          `json:"id"`
+		Name          string          `json:"name"`
+		Site          string          `json:"site"`
+		Message       string          `json:"message"`
+		CustomData    json.RawMessage `json:"customData,omitempty"`
 	}
 
 	var visible []Entry

@@ -10,6 +10,7 @@ create table if not exists entries (
     status varchar(20) not null default 'visible', -- VISIBLE | HIDDEN | SPAM
     ip_hash varchar(255),
     user_agent text,
+    custom_data jsonb,
     sentiment_score real default 0.2,
     created_at timestamptz not null default now(),
     search_vector   tsvector generated always as (
