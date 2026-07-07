@@ -178,27 +178,33 @@ func main() {
 		var score float64
 		var status string
 
+		var hate, sexual, violence, harassment int
+
 		switch {
 		case roll < 0.6:
 			message = randomFrom(positiveMessages)
-			score = 15 + rand.Float64()*5 // 15-20
+			score = 15 + rand.Float64()*5
 			status = "visible"
 		case roll < 0.85:
 			message = randomFrom(neutralMessages)
-			score = 9 + rand.Float64()*6 // 9-15
+			score = 9 + rand.Float64()*6
 			status = "hidden"
 		default:
 			message = randomFrom(negativeMessages)
-			score = rand.Float64() * 4 // 0-4
+			score = rand.Float64() * 4
 			status = "spam"
+			harassment = 10 + rand.Intn(11) // 10-20, most negative messages read as insults/harassment
+			if rand.Float64() < 0.2 {
+				violence = 10 + rand.Intn(11) // occasional violent-flavored spam
+			}
 			spamIPCounts[ipHash]++
 		}
 
 		daysAgo := rand.Intn(180)
 		createdAt := time.Now().AddDate(0, 0, -daysAgo).Format("2006-01-02 15:04:05")
 
-		fmt.Fprintf(f, `INSERT INTO entries (name, email, site, message, status, ip_hash, user_agent, sentiment_score, created_at) VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', %.2f, '%s');`+"\n",
-			escape(name), escape(email), escape(site), escape(message), status, ipHash, userAgent, score, createdAt)
+		fmt.Fprintf(f, `INSERT INTO entries (name, email, site, message, status, ip_hash, user_agent, sentiment_score, hate_score, sexual_score, violence_score, harassment_score, created_at) VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', %.2f, %d, %d, %d, %d, '%s');`+"\n",
+			escape(name), escape(email), escape(site), escape(message), status, ipHash, userAgent, score, hate, sexual, violence, harassment, createdAt)
 	}
 
 	// defaulters — derived from actual spam entries above, so ip_hash values correlate across tables

@@ -12,6 +12,10 @@ create table if not exists entries (
     user_agent text,
     custom_data jsonb,
     sentiment_score real default 0.2,
+    hate_score smallint default 0,
+    sexual_score smallint default 0,
+    violence_score smallint default 0,
+    harassment_score smallint default 0,
     created_at timestamptz not null default now(),
     search_vector   tsvector generated always as (
                         to_tsvector('english', coalesce(name,'') || ' ' || coalesce(message,''))
@@ -25,7 +29,6 @@ create table if not exists defaulters (
     banned              boolean not null default false,
     last_offense_at     timestamptz not null default now()
 );
-
 create index if not exists idx_entries_search on entries using gin (search_vector);
 create index if not exists idx_entries_created_at on entries (created_at desc);
 create index if not exists idx_entries_message_trgm on entries using gin (message gin_trgm_ops);

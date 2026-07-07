@@ -22,8 +22,9 @@ type Config struct {
 
 	IPSalt string
 
-	SpamThreshold int
-	HideThreshold int
+	SpamThreshold       int
+	HideThreshold       int
+	FlagSevereThreshold int
 }
 
 func getEnvOr(key, def string) string {
@@ -36,18 +37,19 @@ func getEnvOr(key, def string) string {
 
 func LoadConfig() (Config, error) {
 	cfg := Config{
-		Environment:      getEnvOr("ENVIRONMENT", "dev"),
-		Port:             getEnvOr("ADDR", "8080"),
-		DatabaseURL:      os.Getenv("DATABASE_URL"),
-		RedisURL:         os.Getenv("REDIS_URL"),
-		OpenrouterKey:    os.Getenv("OPENROUTER_KEY"),
-		OpenrouterModel:  getEnvOr("OPENROUTER_MODEL", "openai/gpt-oss-20b"),
-		AllowedOrigin:    os.Getenv("ALLOWED_ORIGIN"),
-		TurnstileSecret:  os.Getenv("TURNSTILE_SECRET"),
-		TurnstileDemoKey: os.Getenv("TURNSTILE_DEMO"),
-		IPSalt:           os.Getenv("IP_SALT"),
-		SpamThreshold:    3,
-		HideThreshold:    6,
+		Environment:         getEnvOr("ENVIRONMENT", "dev"),
+		Port:                getEnvOr("ADDR", "8080"),
+		DatabaseURL:         os.Getenv("DATABASE_URL"),
+		RedisURL:            os.Getenv("REDIS_URL"),
+		OpenrouterKey:       os.Getenv("OPENROUTER_KEY"),
+		OpenrouterModel:     getEnvOr("OPENROUTER_MODEL", "openai/gpt-oss-20b"),
+		AllowedOrigin:       os.Getenv("ALLOWED_ORIGIN"),
+		TurnstileSecret:     os.Getenv("TURNSTILE_SECRET"),
+		TurnstileDemoKey:    os.Getenv("TURNSTILE_DEMO"),
+		IPSalt:              os.Getenv("IP_SALT"),
+		SpamThreshold:       3,
+		FlagSevereThreshold: 17,
+		HideThreshold:       6,
 	}
 
 	if cfg.DatabaseURL == "" {

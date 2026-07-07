@@ -8,11 +8,22 @@ import (
 	"github.com/OpenRouterTeam/go-sdk/models/components"
 )
 
-func (s *Server) moderate(entryID, ipHash string, score int) {
-	var status string
+type ModerationFlags struct {
+	Hate       int
+	Sexual     int
+	Violence   int
+	Harassment int
+}
 
+func (s *Server) moderate(entryID, ipHash string, score int, flags ModerationFlags) {
+	severe := flags.Hate >= s.cfg.FlagSevereThreshold ||
+		flags.Sexual >= s.cfg.FlagSevereThreshold ||
+		flags.Violence >= s.cfg.FlagSevereThreshold ||
+		flags.Harassment >= s.cfg.FlagSevereThreshold
+
+	var status string
 	switch {
-	case score < s.cfg.SpamThreshold:
+	case severe || score < s.cfg.SpamThreshold:
 		status = "spam"
 	case score < s.cfg.HideThreshold:
 		status = "hidden"
@@ -38,12 +49,16 @@ SET low_sentiment_count = CASE
 		}
 	}
 
-	if _, err := s.db.NewRaw(`UPDATE entries SET sentiment_score = ?, status = ? WHERE id = ?`, score, status, entryID).Exec(context.Background()); err != nil {
+	if _, err := s.db.NewRaw(`UPDATE entries
+SET sentiment_score = ?, status = ?, hate_score = ?, sexual_score = ?, violence_score = ?, harassment_score = ?
+WHERE id = ?`,
+		score, status, flags.Hate, flags.Sexual, flags.Violence, flags.Harassment, entryID,
+	).Exec(context.Background()); err != nil {
 		s.logger.Error("[MODERATION] failed to update entry status", "err", err, "id", entryID)
 	}
 }
 
-func (s *Server) getSentimentScore(c context.Context, text, name, site string) (int, error) {
+func (s *Server) getSentimentScore(c context.Context, text, name, site string) (score int, flags ModerationFlags, err error) {
 	res, err := s.ai.Chat.Send(c, components.ChatRequest{
 		Model: new(s.cfg.OpenrouterModel),
 		Messages: []components.ChatMessages{
@@ -64,10 +79,14 @@ Guidelines:
 - Sarcasm, irony, and lighthearted teasing are acceptable and should not be scored as harsh unless clearly malicious.
 - Swear words used casually or for emphasis (not directed as an attack) are acceptable and should not lower the score on their own.
 - Mild to moderate constructive criticism (e.g. about site design, layout, content) is expected and welcome, and should score in the neutral-to-positive range, not be penalized as negative.
-- Judge intent and tone, not just presence of negative words. Example: "this mf website is so good" is enthusiastic praise using a swear word for emphasis, not an attack — this should score 15-20, not be penalized for the profanity. Sometimes ,swears can also be used sarcastically, not to be penalized.
+- Judge intent and tone, not just presence of negative words. Example: "this mf website is so good" is enthusiastic praise using a swear word for emphasis, not an attack — this should score 15-20, not be penalized for the profanity. Sometimes, swears can also be used sarcastically, not to be penalized.
 
+Respond with ONLY comma-separated integers in this exact order, no words, no spaces, no punctuation:
+score,hate,sexual,violence,harassment
+- score: 0-20 as defined above
+- hate, sexual, violence, harassment: each scored 0-20, where 0 = completely absent and 20 = severe, unambiguous presence of that category (hate speech targeting identity, sexual content, threats/incitement of violence, targeted harassment of a specific person)
 
-Respond with ONLY the integer score (0-20). No words, no explanation, no punctuation.
+Example outputs: "18,0,0,0,0" or "2,0,0,0,17"
 
 <name>` + name + `</name>
 <website>` + site + `</website>
@@ -80,23 +99,39 @@ Respond with ONLY the integer score (0-20). No words, no explanation, no punctua
 	}, nil)
 
 	if err != nil {
-		return 0, err
+		return 0, ModerationFlags{}, err
 	}
 
 	if len(res.ChatResult.Choices) == 0 {
-		return 0, fmt.Errorf("no response from the model")
+		return 0, ModerationFlags{}, fmt.Errorf("no response from the model")
 	}
 
 	content := res.ChatResult.Choices[0].Message.Content
 	if content.IsNull() {
-		return 0, fmt.Errorf("no response from the model")
+		return 0, ModerationFlags{}, fmt.Errorf("no response from the model")
 	}
 
 	contentVal, ok := content.Get()
 	if !ok || contentVal.Str == nil {
-		return 0, fmt.Errorf("empty content in response")
+		return 0, ModerationFlags{}, fmt.Errorf("empty content in response")
 	}
-	var score int
-	_, err = fmt.Sscanf(strings.TrimSpace(*contentVal.Str), "%d", &score)
-	return score, err
+
+	parts := strings.Split(strings.TrimSpace(*contentVal.Str), ",")
+	if len(parts) != 5 {
+		return 0, ModerationFlags{}, fmt.Errorf("unexpected model output: %q", *contentVal.Str)
+	}
+
+	vals := make([]int, 5)
+	for i, p := range parts {
+		if _, err := fmt.Sscanf(p, "%d", &vals[i]); err != nil {
+			return 0, ModerationFlags{}, fmt.Errorf("bad field %d: %w", i, err)
+		}
+	}
+
+	return vals[0], ModerationFlags{
+		Hate:       vals[1],
+		Sexual:     vals[2],
+		Violence:   vals[3],
+		Harassment: vals[4],
+	}, nil
 }

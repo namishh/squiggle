@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
@@ -68,12 +69,13 @@ func (s *Server) handlePost(c *echo.Context) error {
 
 	go func(id, message, name, site, ipHash string) {
 		bgctx := context.Background()
-		score, err := s.getSentimentScore(bgctx, message, name, site)
+		score, flags, err := s.getSentimentScore(bgctx, message, name, site)
 		if err != nil {
 			s.logger.Error("[SENTIMENT] Error in getting sentiment score", "id", id, "err", err)
 			return
 		}
-		s.moderate(id, ipHash, score)
+		s.logger.Info("[SENTIMENT] scored", "id", id, "score", score, "hate", flags.Hate, "sexual", flags.Sexual, "violence", flags.Violence, "harassment", flags.Harassment)
+		s.moderate(id, ipHash, score, flags)
 
 	}(entry.ID, postreq.Message, postreq.Name, postreq.Site, ipHash)
 
@@ -90,6 +92,7 @@ func (s *Server) listEntries(c *echo.Context) error {
 		Site          string          `json:"site"`
 		Message       string          `json:"message"`
 		CustomData    json.RawMessage `json:"customData,omitempty"`
+		CreatedAt     time.Time       `json:"createdAt"`
 		TotalCount    int             `bun:"total_count,scanonly" json:"-"`
 	}
 
@@ -112,7 +115,7 @@ func (s *Server) listEntries(c *echo.Context) error {
 
 	query := s.db.NewSelect().
 		Model(&entries).
-		ColumnExpr("id, name, site, message, custom_data").
+		ColumnExpr("id, name, site, message, custom_data, created_at").
 		ColumnExpr("count(*) OVER() AS total_count").
 		Limit(limit).
 		Offset(offset)
