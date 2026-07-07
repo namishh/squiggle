@@ -29,4 +29,8 @@ func (s *Server) RegisterRoutes(e *echo.Echo) {
 	e.POST("/entry", s.handlePost, s.rateLimit, s.checkBanned, s.ttCheck, s.checkOrigin)
 	e.GET("/entry", s.listEntries)
 	e.GET("/entry/count", s.countEntries)
+
+	e.GET("/favicon.ico", func(c *echo.Context) error {
+		return c.NoContent(http.StatusNoContent)
+	})
 }

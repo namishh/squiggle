@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
@@ -79,18 +80,6 @@ func (s *Server) handlePost(c *echo.Context) error {
 	return c.JSON(http.StatusCreated, map[string]string{"status": "posted"})
 }
 
-func (s *Server) countEntries(c *echo.Context) error {
-	ctx := c.Request().Context()
-	var count int
-
-	err := s.db.NewRaw(`SELECT COUNT(*) FROM entries WHERE status = 'visible'`).Scan(ctx, &count)
-	if err != nil {
-		return ErrInternal
-	}
-
-	return c.JSON(http.StatusOK, map[string]int{"count": count})
-}
-
 func (s *Server) listEntries(c *echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -101,27 +90,101 @@ func (s *Server) listEntries(c *echo.Context) error {
 		Site          string          `json:"site"`
 		Message       string          `json:"message"`
 		CustomData    json.RawMessage `json:"customData,omitempty"`
+		TotalCount    int             `bun:"total_count,scanonly" json:"-"`
 	}
 
-	var visible []Entry
-	var hidden []Entry
+	var entries []Entry
 
-	if err := s.db.NewSelect().Model(&visible).
-		Where("status = ?", "visible").
-		Order("created_at DESC").
-		Scan(ctx); err != nil {
+	includeHidden := c.QueryParam("hidden") == "true"
+	search := c.QueryParam("search")
+	from := c.QueryParam("from")
+	to := c.QueryParam("to")
+
+	page := 1
+	if p, err := strconv.Atoi(c.QueryParam("page")); err == nil && p > 0 {
+		page = p
+	}
+	limit := 20
+	if l, err := strconv.Atoi(c.QueryParam("limit")); err == nil && l > 0 && l <= 100 {
+		limit = l
+	}
+	offset := (page - 1) * limit
+
+	query := s.db.NewSelect().
+		Model(&entries).
+		ColumnExpr("id, name, site, message, custom_data").
+		ColumnExpr("count(*) OVER() AS total_count").
+		Limit(limit).
+		Offset(offset)
+
+	if includeHidden {
+		query.Where("(status = ? OR status = ?)", "visible", "hidden")
+	} else {
+		query.Where("status = ?", "visible")
+	}
+
+	if search != "" {
+		query.Where(`
+			search_vector @@ plainto_tsquery('english', ?)
+			OR similarity(message, ?) > 0.3
+			OR similarity(name, ?) > 0.3
+		`, search, search, search)
+		query.OrderExpr(`
+			ts_rank(search_vector, plainto_tsquery('english', ?)) DESC,
+			GREATEST(similarity(message, ?), similarity(name, ?)) DESC
+		`, search, search, search)
+	} else {
+		query.Order("created_at DESC")
+	}
+
+	if from != "" {
+		query.Where("created_at >= ?", from)
+	}
+	if to != "" {
+		query.Where("created_at <= ?", to)
+	}
+
+	if err := query.Scan(ctx); err != nil {
+		s.logger.Error("[LIST ENTRIES] query failed", "err", err)
 		return ErrInternal
 	}
 
-	if err := s.db.NewSelect().Model(&hidden).
-		Where("status = ?", "hidden").
-		Order("created_at DESC").
-		Scan(ctx); err != nil {
-		return ErrInternal
+	totalEntries := 0
+	if len(entries) > 0 {
+		totalEntries = entries[0].TotalCount
+	}
+	totalPages := 0
+	if totalEntries > 0 {
+		totalPages = (totalEntries + limit - 1) / limit
 	}
 
-	return c.JSON(http.StatusOK, map[string][]Entry{
-		"visible": visible,
-		"hidden":  hidden,
+	return c.JSON(http.StatusOK, map[string]any{
+		"entries": entries,
+		"pagination": map[string]any{
+			"page":         page,
+			"limit":        limit,
+			"totalEntries": totalEntries,
+			"totalPages":   totalPages,
+			"hasNext":      page < totalPages,
+			"hasPrevious":  page > 1,
+		},
 	})
+}
+
+func (s *Server) countEntries(c *echo.Context) error {
+	ctx := c.Request().Context()
+	includeHidden := c.QueryParam("hidden") == "true"
+
+	var count int
+	var err error
+	if includeHidden {
+		err = s.db.NewRaw(`SELECT COUNT(*) FROM entries WHERE status IN ('visible', 'hidden')`).Scan(ctx, &count)
+	} else {
+		err = s.db.NewRaw(`SELECT COUNT(*) FROM entries WHERE status = 'visible'`).Scan(ctx, &count)
+	}
+	if err != nil {
+		s.logger.Error("[COUNT ENTRIES] query failed", "err", err)
+		return ErrInternal
+	}
+	return c.JSON(http.StatusOK, map[string]int{"count": count})
 }
