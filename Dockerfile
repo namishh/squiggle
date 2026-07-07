@@ -5,6 +5,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+RUN go tool templ generate
 RUN go build -o squiggle ./cmd
 
 FROM alpine:latest

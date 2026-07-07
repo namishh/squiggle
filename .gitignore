@@ -5,8 +5,12 @@
 !.github
 !.github/*
 
+!air.toml
+
 !Dockerfile
+!Dockerfile.dev
 !docker-compose.yml
+!docker-compose.dev.yml
 !.env.sample
 
 !sql
@@ -25,4 +29,5 @@
 !internal/server
 !internal/server/*.go
 
-!README.md
+!templates
+!templates/*.templ

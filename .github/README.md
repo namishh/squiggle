@@ -10,7 +10,7 @@ squiggle is a tiny self hostable llm-moderated guestbook backend built with gola
 2. run with docker
 
 ```
-docker compose up --build --watch
+docker compose -f docker-compose.dev.yml up --build
 ```
 
 3. (optional) generate and seed random data
@@ -18,6 +18,12 @@ docker compose up --build --watch
 ```
 go run ./sql/seed-gen.go
 docker compose exec -T postgres psql -U <DB_USER> -d <DB_NAME> < ./seed.sql
+```
+
+4. to build for prod
+5. 
+```
+docker compose up --build --watch
 ```
 
 ### to use in your static site

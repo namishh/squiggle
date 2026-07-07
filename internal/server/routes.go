@@ -5,6 +5,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
+	"github.com/namishh/squiggle/templates"
 )
 
 func (s *Server) RegisterRoutes(e *echo.Echo) {
@@ -24,7 +25,7 @@ func (s *Server) RegisterRoutes(e *echo.Echo) {
 	}))
 
 	e.GET("/", func(c *echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]string{"message": "Hello, World!"})
+		return templates.Home("squiggle").Render(c.Request().Context(), c.Response())
 	})
 	e.POST("/entry", s.handlePost, s.rateLimit, s.checkBanned, s.ttCheck, s.checkOrigin)
 	e.GET("/entry", s.listEntries)
