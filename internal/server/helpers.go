@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -45,4 +46,30 @@ func directIP(c *echo.Context) string {
 		return c.Request().RemoteAddr
 	}
 	return ip
+}
+
+func (s *Server) isOriginAllowed(raw string) bool {
+	if raw == "" {
+		return false
+	}
+
+	allowedUrl, err := url.Parse(s.cfg.AllowedOrigin)
+	if err != nil {
+		return false
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+
+	if u.Scheme != allowedUrl.Scheme {
+		return false
+	}
+
+	host := u.Hostname()
+	allowedHost := allowedUrl.Hostname()
+
+	return host == allowedHost ||
+		strings.HasSuffix(host, "."+allowedHost)
 }

@@ -1,8 +1,6 @@
 package server
 
 import (
-	"strings"
-
 	"github.com/go-redis/redis_rate/v10"
 	"github.com/labstack/echo/v5"
 )
@@ -77,14 +75,8 @@ func (s *Server) checkOrigin(next echo.HandlerFunc) echo.HandlerFunc {
 			return next(c)
 		}
 
-		origin := c.Request().Header.Get("Origin")
-		referer := c.Request().Header.Get("Referer")
-		allowed := s.cfg.AllowedOrigin
-
-		if origin != "" && strings.HasPrefix(origin, allowed) {
-			return next(c)
-		}
-		if referer != "" && strings.HasPrefix(referer, allowed) {
+		if s.isOriginAllowed(c.Request().Header.Get("Origin")) ||
+			s.isOriginAllowed(c.Request().Header.Get("Referer")) {
 			return next(c)
 		}
 
