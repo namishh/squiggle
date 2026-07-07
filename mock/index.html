@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <script
+            src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+            async
+            defer
+        ></script>
+        <title>Test Script</title>
+    </head>
+    <body>
+        <form id="entry-form">
+            <input type="text" id="name" placeholder="Name" required /> <br />
+            <input type="email" id="email" placeholder="Email (optional)" />
+            <br />
+            <input type="text" id="site" placeholder="Your site (optional)" />
+            <br />
+            <textarea
+                id="message"
+                placeholder="Leave a message..."
+                required
+            ></textarea>
+            <div
+                class="cf-turnstile"
+                data-sitekey="1x00000000000000000000AA"
+            ></div>
+            <button type="submit">Post</button>
+        </form>
+
+        <hr />
+        <div id="comments-section">
+            <input type="text" id="search" placeholder="Search comments..." />
+            <div id="comments-list"></div>
+            <div id="pagination">
+                <button id="prev-page">Prev</button>
+                <span id="page-info"></span>
+                <button id="next-page">Next</button>
+            </div>
+        </div>
+
+        <script>
+            const BASE_URL = "http://localhost:8080";
+            const form = document.querySelector("#entry-form");
+            form.addEventListener("submit", async (e) => {
+                e.preventDefault();
+                const name = document.querySelector("#name").value;
+                const email = document.querySelector("#email").value;
+                const site = document.querySelector("#site").value;
+                const message = document.querySelector("#message").value;
+                const turnstileToken = document.querySelector(
+                    '[name="cf-turnstile-response"]',
+                ).value;
+                try {
+                    const res = await fetch(BASE_URL + "/entry", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            name,
+                            email,
+                            site,
+                            message,
+                            turnstileToken,
+                        }),
+                    });
+                    const data = await res.json();
+                    console.log(res.status, data);
+                    loadComments(1);
+                    //form.reset();
+                } catch (err) {
+                    console.log("error");
+                }
+            });
+
+            let currentPage = 1;
+            const commentsList = document.querySelector("#comments-list");
+            const pageInfo = document.querySelector("#page-info");
+            const searchInput = document.querySelector("#search");
+
+            async function loadComments(page = 1) {
+                currentPage = page;
+                const search = searchInput.value.trim();
+                const params = new URLSearchParams({ page, limit: 10 });
+                if (search) params.set("search", search);
+
+                try {
+                    const res = await fetch(
+                        `${BASE_URL}/entry?${params.toString()}`,
+                    );
+                    const data = await res.json();
+                    renderComments(data);
+                } catch (err) {
+                    console.log("failed to load comments", err);
+                }
+            }
+
+            function renderComments(data) {
+                commentsList.innerHTML = "";
+                data.entries.forEach((entry) => {
+                    const div = document.createElement("div");
+                    const date = new Date(entry.createdAt).toLocaleString();
+                    div.innerHTML = `<strong>${entry.name}</strong> <small>${date}</small><p>${entry.message}</p>`;
+                    commentsList.appendChild(div);
+                });
+
+                const { page, totalPages, hasNext, hasPrevious } =
+                    data.pagination;
+                pageInfo.textContent = `Page ${page} of ${totalPages}`;
+                document.querySelector("#prev-page").disabled = !hasPrevious;
+                document.querySelector("#next-page").disabled = !hasNext;
+            }
+
+            document
+                .querySelector("#prev-page")
+                .addEventListener("click", () => {
+                    loadComments(currentPage - 1);
+                });
+            document
+                .querySelector("#next-page")
+                .addEventListener("click", () => {
+                    loadComments(currentPage + 1);
+                });
+            searchInput.addEventListener("input", () => loadComments(1));
+
+            loadComments(1);
+        </script>
+    </body>
+</html>

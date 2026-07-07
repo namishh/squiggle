@@ -46,3 +46,6 @@ const res = await fetch(BASE_URL + "/entry", {
     }),
 });
 ```
+
+
+an example is given in `/mock/index.html`

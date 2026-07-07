@@ -13,6 +13,9 @@
 !sql/init.sql
 !sql/*.go
 
+!mock
+!mock/index.html
+
 !cmd
 !cmd/main.go
 !internal
