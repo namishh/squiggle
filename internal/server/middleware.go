@@ -7,7 +7,7 @@ import (
 
 func (s *Server) rateLimit(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
-		res, err := s.limiter.Allow(c.Request().Context(), directIP(c), redis_rate.PerMinute(10))
+		res, err := s.limiter.Allow(c.Request().Context(), directIP(c), redis_rate.PerMinute(5))
 		if err != nil {
 			return err
 		}
@@ -23,7 +23,7 @@ func (s *Server) checkBanned(next echo.HandlerFunc) echo.HandlerFunc {
 		ipHash := hashIP(directIP(c), s.cfg.IPSalt)
 		var banned bool
 
-		err := s.db.NewSelect().Table("defaulters").ColumnExpr("banned").Where("ip_hash = ?", ipHash).Scan(c.Request().Context(), &banned)
+		err := s.db.NewSelect().Table("defaulters").ColumnExpr("banned AND last_offense_at > now() - interval '3 days'").Where("ip_hash = ?", ipHash).Scan(c.Request().Context(), &banned)
 
 		if err != nil {
 			s.logger.Warn("[BAN CHECK] error checking", "err", err, "ip_hash", ipHash)

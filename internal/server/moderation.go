@@ -24,9 +24,15 @@ func (s *Server) moderate(entryID, ipHash string, score int) {
 		if _, err := s.db.NewRaw(`INSERT INTO defaulters (ip_hash, low_sentiment_count, last_offense_at)
 VALUES (?, 1, now())
 ON CONFLICT (ip_hash) DO UPDATE
-SET low_sentiment_count = defaulters.low_sentiment_count + 1,
+SET low_sentiment_count = CASE
+        WHEN defaulters.last_offense_at < now() - interval '3 days' THEN 1
+        ELSE defaulters.low_sentiment_count + 1
+    END,
     last_offense_at = now(),
-    banned = (defaulters.low_sentiment_count + 1) >= 2
+    banned = CASE
+        WHEN defaulters.last_offense_at < now() - interval '3 days' THEN false
+        ELSE (defaulters.low_sentiment_count + 1) >= 2
+    END
 `, ipHash).Exec(context.Background()); err != nil {
 			s.logger.Error("[MODERATION] failed to record defaulter", "err", err, "ip_hash", ipHash)
 		}
