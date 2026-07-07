@@ -2,7 +2,6 @@ FROM golang:1.26-alpine
 
 WORKDIR /app
 
-# Install Air
 RUN go install github.com/air-verse/air@latest
 
 COPY go.mod go.sum ./
