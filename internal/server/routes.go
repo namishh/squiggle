@@ -27,6 +27,13 @@ func (s *Server) RegisterRoutes(e *echo.Echo) {
 	e.GET("/", func(c *echo.Context) error {
 		return templates.Home("squiggle").Render(c.Request().Context(), c.Response())
 	})
+
+	e.GET("/vault", func(c *echo.Context) error {
+		return templates.Vault().Render(c.Request().Context(), c.Response())
+	})
+
+	e.POST("/vault", s.handleVaultLogin, s.vaultLimit)
+
 	e.POST("/entry", s.handlePost, s.rateLimit, s.checkBanned, s.ttCheck, s.checkOrigin)
 	e.GET("/entry", s.listEntries)
 	e.GET("/entry/count", s.countEntries)

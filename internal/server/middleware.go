@@ -3,6 +3,7 @@ package server
 import (
 	"github.com/go-redis/redis_rate/v10"
 	"github.com/labstack/echo/v5"
+	"github.com/namishh/squiggle/templates"
 )
 
 func (s *Server) rateLimit(next echo.HandlerFunc) echo.HandlerFunc {
@@ -13,6 +14,20 @@ func (s *Server) rateLimit(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 		if res.Allowed == 0 {
 			return ErrRateLimited
+		}
+		return next(c)
+	}
+}
+
+func (s *Server) vaultLimit(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		res, err := s.limiter.Allow(c.Request().Context(), "vault:"+directIP(c), redis_rate.PerMinute(5))
+		if err != nil {
+			return err
+		}
+		if res.Allowed == 0 {
+			s.logger.Warn("[VAULT] rate limited", "ip", directIP(c))
+			return templates.Vault().Render(c.Request().Context(), c.Response())
 		}
 		return next(c)
 	}

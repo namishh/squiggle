@@ -25,6 +25,8 @@ type Config struct {
 	SpamThreshold       int
 	HideThreshold       int
 	FlagSevereThreshold int
+
+	AdminPassword string
 }
 
 func getEnvOr(key, def string) string {
@@ -40,6 +42,7 @@ func LoadConfig() (Config, error) {
 		Environment:         getEnvOr("ENVIRONMENT", "dev"),
 		Port:                getEnvOr("ADDR", "8080"),
 		DatabaseURL:         os.Getenv("DATABASE_URL"),
+		AdminPassword:       os.Getenv("ADMIN_PASSWORD"),
 		RedisURL:            os.Getenv("REDIS_URL"),
 		OpenrouterKey:       os.Getenv("OPENROUTER_KEY"),
 		OpenrouterModel:     getEnvOr("OPENROUTER_MODEL", "openai/gpt-oss-20b"),
@@ -50,6 +53,10 @@ func LoadConfig() (Config, error) {
 		SpamThreshold:       3,
 		FlagSevereThreshold: 17,
 		HideThreshold:       6,
+	}
+
+	if cfg.AdminPassword == "" {
+		return cfg, fmt.Errorf("ADMIN_PASSWORD is required")
 	}
 
 	if cfg.DatabaseURL == "" {

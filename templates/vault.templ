@@ -1,0 +1,35 @@
+package templates
+
+templ Vault() {
+	@Base("Vault") {
+		<a href="/" class="horizontal_container" style="text-decoration:none;">
+  			<img src="https://sakura.rex.wf/linear/squiggle?size=192" style="width:24px;height:24px">
+		  	<p>squiggle</p>
+	     </a>
+		<br>
+			<form id="form">
+				<input class="passinput" id="password" type="password" name="password" required/>
+			<button class="vaultbutton" type="submit">Enter</button>
+		</form>
+
+
+		<script>
+			document.querySelector("#form").addEventListener("submit", async (e) => {
+			    e.preventDefault()
+				const password = document.querySelector("#password").value;
+				const res = await fetch("/vault", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					credentials: "same-origin",
+					body: JSON.stringify({ password }),
+				});
+				console.log(res.ok)
+				// if (res.ok) {
+				// 	window.location.href = "/admin";
+				// } else {
+				// 	document.querySelector("#vault-error").style.display = "block";
+				// }
+			});
+		</script>
+	}
+}
