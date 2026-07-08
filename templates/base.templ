@@ -4,6 +4,63 @@ templ Base (title string) {
 <html>
     <head>
         <title>{ title }</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+        <style>
+            body {
+                padding: 10px;
+                background: #0f0f0f;
+                color: #eee;
+                font-family: "Geist Mono", monospace;
+            }
+
+            .horizontal_container {
+                align-items: center;
+                gap: 10px;
+                display: flex;
+            }
+
+            .container {
+                margin: 10px 0px;
+                font-size: 14px;
+            }
+
+
+            .link {
+                font-size: 14px;
+                color: #eeeeee;
+                text-underline-offset: 4px;
+            }
+            .link:hover {
+                font-size: 14px;
+                color: #999999;
+            }
+
+            .link:visited {
+                font-size: 14px;
+                color: #eeeeee;
+            }
+
+            .admin {
+                text-transform: uppercase;
+                font-size: 14px;
+                padding: 7px 10px;
+                color: #dddddd;
+                text-decoration: none;
+                border: 1px solid #dddddd;
+            }
+
+            .admin:hover {
+                color: #aaaaaa;
+                text-decoration: none;
+                border: 1px solid #aaaaaa;
+            }
+
+            .admin:visited {
+                color: #dddddd;
+            }
+        </style>
     </head>
     <body>
         { children... }
