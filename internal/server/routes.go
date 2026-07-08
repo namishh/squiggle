@@ -28,11 +28,11 @@ func (s *Server) RegisterRoutes(e *echo.Echo) {
 		return templates.Home("squiggle").Render(c.Request().Context(), c.Response())
 	})
 
-	e.GET("/vault", func(c *echo.Context) error {
-		return templates.Vault().Render(c.Request().Context(), c.Response())
-	})
+	e.GET("/vault", s.handleVaultPage)
 
 	e.POST("/vault", s.handleVaultLogin, s.vaultLimit)
+	e.GET("/admin", s.handleAdminPage, s.requireAdmin)
+	e.GET("/admin/logout", s.handleLogout, s.requireAdmin)
 
 	e.POST("/entry", s.handlePost, s.rateLimit, s.checkBanned, s.ttCheck, s.checkOrigin)
 	e.GET("/entry", s.listEntries)

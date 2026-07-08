@@ -1,6 +1,8 @@
 package server
 
 import (
+	"net/http"
+
 	"github.com/go-redis/redis_rate/v10"
 	"github.com/labstack/echo/v5"
 	"github.com/namishh/squiggle/templates"
@@ -96,5 +98,25 @@ func (s *Server) checkOrigin(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 
 		return ErrInvalidOrigin
+	}
+}
+
+func (s *Server) requireAdmin(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		cookie, err := c.Cookie("admin_session")
+
+		if err != nil || cookie.Value == "" {
+			return c.Redirect(http.StatusFound, "/vault")
+		}
+
+		exists, err := s.redis.Exists(c.Request().Context(), "session:"+cookie.Value).Result()
+		if err != nil {
+			s.logger.Error("[ADMIN] session check failed", "err", err)
+			return ErrInternal
+		}
+		if exists == 0 {
+			return c.Redirect(http.StatusFound, "/vault")
+		}
+		return next(c)
 	}
 }

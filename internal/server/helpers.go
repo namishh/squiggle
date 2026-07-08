@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"net"
@@ -72,4 +73,13 @@ func (s *Server) isOriginAllowed(raw string) bool {
 
 	return host == allowedHost ||
 		strings.HasSuffix(host, "."+allowedHost)
+}
+
+func generateSessionToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(b), nil
 }

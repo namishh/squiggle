@@ -26,6 +26,7 @@ var (
 	ErrInvalidCaptcha = &SquiggleError{http.StatusForbidden, "captcha verification failed", "invalid_captcha"}
 	ErrInvalidOrigin  = &SquiggleError{http.StatusForbidden, "invalid origin", "invalid_origin"}
 	ErrInternal       = &SquiggleError{http.StatusInternalServerError, "internal error", "internal_error"}
+	ErrSessionFailed  = &SquiggleError{http.StatusInternalServerError, "failed to store session ", "session_failure"}
 	ErrEmail          = &SquiggleError{http.StatusBadRequest, "invalid email", "invalid_email"}
 	ErrSite           = &SquiggleError{http.StatusBadRequest, "invalid site", "invalid_site"}
 	ErrDetails        = &SquiggleError{http.StatusBadRequest, "name and message are mandatory ", "invalid_validation"}

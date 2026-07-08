@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 )
 
 type Config struct {
@@ -27,6 +28,7 @@ type Config struct {
 	FlagSevereThreshold int
 
 	AdminPassword string
+	SessionTTL    time.Duration
 }
 
 func getEnvOr(key, def string) string {
@@ -53,6 +55,7 @@ func LoadConfig() (Config, error) {
 		SpamThreshold:       3,
 		FlagSevereThreshold: 17,
 		HideThreshold:       6,
+		SessionTTL:          12 * time.Hour,
 	}
 
 	if cfg.AdminPassword == "" {

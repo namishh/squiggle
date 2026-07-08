@@ -7,6 +7,8 @@ templ Vault() {
 		  	<p>squiggle</p>
 	     </a>
 		<br>
+
+			<p id="vault-error" style="display:none">Incorrect password.</p>
 			<form id="form">
 				<input class="passinput" id="password" type="password" name="password" required/>
 			<button class="vaultbutton" type="submit">Enter</button>
@@ -24,11 +26,11 @@ templ Vault() {
 					body: JSON.stringify({ password }),
 				});
 				console.log(res.ok)
-				// if (res.ok) {
-				// 	window.location.href = "/admin";
-				// } else {
-				// 	document.querySelector("#vault-error").style.display = "block";
-				// }
+				if (res.ok) {
+					window.location.href = "/admin";
+				} else {
+					document.querySelector("#vault-error").style.display = "block";
+				}
 			});
 		</script>
 	}
