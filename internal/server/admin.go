@@ -89,3 +89,63 @@ func (s *Server) adminListAllEntries(c *echo.Context) error {
 		"entries": entries,
 	})
 }
+
+func (s *Server) adminSetStatus(c *echo.Context) error {
+	var req struct {
+		Id     string `json:"id"`
+		Status string `json:"status"`
+	}
+
+	if err := c.Bind(&req); err != nil || req.Id == "" {
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	switch req.Status {
+	case "visible", "hidden", "spam":
+	default:
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	if _, err := s.db.NewRaw(`UPDATE entries SET status = ? WHERE id = ?`,
+		req.Status, req.Id).Exec(c.Request().Context()); err != nil {
+		s.logger.Error("[ADMIN SET STATUS] failed", "err", err, "id", req.Id)
+		return ErrInternal
+	}
+	return c.NoContent(http.StatusOK)
+}
+
+func (s *Server) adminStats(c *echo.Context) error {
+	ctx := c.Request().Context()
+	type Stats struct {
+		Total   int `bun:"total" json:"total"`
+		Visible int `bun:"visible" json:"visible"`
+		Hidden  int `bun:"hidden" json:"hidden"`
+		Spam    int `bun:"spam" json:"spam"`
+		Today   int `bun:"today" json:"today"`
+	}
+
+	var stats Stats
+	if err := s.db.NewRaw(`
+		SELECT
+			count(*) AS total,
+			count(*) FILTER (WHERE status = 'visible') AS visible,
+			count(*) FILTER (WHERE status = 'hidden') AS hidden,
+			count(*) FILTER (WHERE status = 'spam') AS spam,
+			count(*) FILTER (WHERE created_at > date_trunc('day', now())) AS today
+		FROM entries
+	`).Scan(ctx, &stats); err != nil {
+		s.logger.Error("[ADMIN STATS] query failed", "err", err)
+		return ErrInternal
+	}
+
+	var bannedCount int
+	if err := s.db.NewRaw(`SELECT count(*) FROM defaulters WHERE banned = true`).Scan(ctx, &bannedCount); err != nil {
+		s.logger.Error("[ADMIN STATS] banned query failed", "err", err)
+		return ErrInternal
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"total": stats.Total, "visible": stats.Visible, "hidden": stats.Hidden,
+		"spam": stats.Spam, "today": stats.Today, "banned": bannedCount,
+	})
+}

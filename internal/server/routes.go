@@ -36,6 +36,8 @@ func (s *Server) RegisterRoutes(e *echo.Echo) {
 
 	e.GET("/admin/all", s.adminListAllEntries, s.requireAdmin)
 	e.GET("/admin/entry", s.adminListEntries, s.requireAdmin)
+	e.POST("/admin/status", s.adminSetStatus, s.requireAdmin)
+	e.GET("/admin/stats", s.adminStats, s.requireAdmin)
 
 	e.POST("/entry", s.handlePost, s.rateLimit, s.checkBanned, s.ttCheck, s.checkOrigin)
 	e.GET("/entry", s.listEntries)
