@@ -182,7 +182,7 @@ func (s *Server) adminSetStatus(c *echo.Context) error {
 		return ErrInternal
 	}
 	s.bumpEntriesCache(c.Request().Context())
-
+	s.publish(c.Request().Context(), "status", map[string]any{"id": req.Id, "status": req.Status})
 	return c.NoContent(http.StatusOK)
 }
 
@@ -243,6 +243,6 @@ func (s *Server) adminDeleteEntry(c *echo.Context) error {
 
 	s.logger.Warn("[ADMIN DELETE] entry hard-deleted", "id", req.Id)
 	s.bumpEntriesCache(c.Request().Context())
-
+	s.publish(c.Request().Context(), "delete", map[string]any{"id": req.Id})
 	return c.NoContent(http.StatusOK)
 }

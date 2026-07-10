@@ -40,6 +40,7 @@ func (s *Server) RegisterRoutes(e *echo.Echo) {
 	admin.POST("/status", s.adminSetStatus)
 	admin.POST("/delete", s.adminDeleteEntry)
 	admin.GET("/stats", s.adminStats)
+	admin.GET("/stream", s.stream)
 
 	e.POST("/entry", s.handlePost, s.rateLimit, s.checkBanned, s.ttCheck, s.checkOrigin)
 	e.GET("/entry", s.listEntries)

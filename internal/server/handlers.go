@@ -80,6 +80,8 @@ func (s *Server) handlePost(c *echo.Context) error {
 	}(entry.ID, postreq.Message, postreq.Name, postreq.Site, ipHash)
 	s.bumpEntriesCache(c.Request().Context())
 
+	s.publish(c.Request().Context(), "insert", map[string]any{"id": entry.ID})
+
 	return c.JSON(http.StatusCreated, map[string]string{"status": "posted"})
 }
 
