@@ -1,7 +1,6 @@
-## squiggle
+## ![img](https://sakura.rex.wf/linear/squiggle?size=36) squiggle
 
-squiggle is a tiny self hostable llm-moderated guestbook backend built with golang and echo.
-
+squiggle is a tiny self hostable llm-moderated guestbook backend built with golang and echo. comes with a real time admin panel.
 
 ### local quickstart 
 
