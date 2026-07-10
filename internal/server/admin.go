@@ -18,7 +18,6 @@ type AdminEntry struct {
 	Site            string          `json:"site"`
 	Message         string          `json:"message"`
 	Status          string          `json:"status"`
-	IPHash          string          `json:"ipHash" bun:"ip_hash"`
 	UserAgent       string          `json:"userAgent" bun:"user_agent"`
 	CustomData      json.RawMessage `json:"customData,omitempty" bun:"custom_data"`
 	SentimentScore  float64         `json:"sentimentScore" bun:"sentiment_score"`
@@ -45,7 +44,7 @@ func (s *Server) adminListEntries(c *echo.Context) error {
 	offset := (page - 1) * limit
 
 	var entries []AdminEntry
-	query := s.db.NewSelect().Model(&entries).ColumnExpr("id, name, email, site, message, status, ip_hash, user_agent, custom_data, sentiment_score, hate_score, sexual_score, violence_score, harassment_score, created_at").
+	query := s.db.NewSelect().Model(&entries).ColumnExpr("id, name, email, site, message, status, user_agent, custom_data, sentiment_score, hate_score, sexual_score, violence_score, harassment_score, created_at").
 		ColumnExpr("count(*) OVER() AS total_count").Order("created_at desc").Limit(limit).Offset(offset)
 
 	if status != "" {
@@ -148,4 +147,27 @@ func (s *Server) adminStats(c *echo.Context) error {
 		"total": stats.Total, "visible": stats.Visible, "hidden": stats.Hidden,
 		"spam": stats.Spam, "today": stats.Today, "banned": bannedCount,
 	})
+}
+
+func (s *Server) adminDeleteEntry(c *echo.Context) error {
+	var req struct {
+		Id string `json:"id"`
+	}
+
+	if err := c.Bind(&req); err != nil || req.Id == "" {
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	res, err := s.db.NewDelete().Table("entries").Where("id = ?", req.Id).Exec(c.Request().Context())
+
+	if err != nil {
+		s.logger.Error("[ADMIN DELETE] failed", "err", err, "id", req.Id)
+		return ErrInternal
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return c.NoContent(http.StatusNotFound)
+	}
+
+	s.logger.Warn("[ADMIN DELETE] entry hard-deleted", "id", req.Id)
+	return c.NoContent(http.StatusOK)
 }

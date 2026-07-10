@@ -31,13 +31,15 @@ func (s *Server) RegisterRoutes(e *echo.Echo) {
 	e.GET("/vault", s.handleVaultPage)
 
 	e.POST("/vault", s.handleVaultLogin, s.vaultLimit)
-	e.GET("/admin", s.handleAdminPage, s.requireAdmin)
-	e.GET("/admin/logout", s.handleLogout, s.requireAdmin)
 
-	e.GET("/admin/all", s.adminListAllEntries, s.requireAdmin)
-	e.GET("/admin/entry", s.adminListEntries, s.requireAdmin)
-	e.POST("/admin/status", s.adminSetStatus, s.requireAdmin)
-	e.GET("/admin/stats", s.adminStats, s.requireAdmin)
+	admin := e.Group("/admin", s.requireAdmin)
+	admin.GET("", s.handleAdminPage)
+	admin.GET("/logout", s.handleLogout)
+	admin.GET("/all", s.adminListAllEntries)
+	admin.GET("/entry", s.adminListEntries)
+	admin.POST("/status", s.adminSetStatus)
+	admin.POST("/delete", s.adminDeleteEntry)
+	admin.GET("/stats", s.adminStats)
 
 	e.POST("/entry", s.handlePost, s.rateLimit, s.checkBanned, s.ttCheck, s.checkOrigin)
 	e.GET("/entry", s.listEntries)
