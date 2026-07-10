@@ -134,7 +134,352 @@ templ Base (title string) {
             .selected {
                 background: #444;
             }
+            .filters {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+                padding: 15px 0;
+                flex-wrap: wrap;
+            }
 
+            .filter-input {
+                background: #0f0f0f;
+                border: 1px solid #333;
+                color: #eee;
+                padding: 8px 10px;
+                font-family: "Geist Mono", monospace;
+                font-size: 13px;
+                min-width: 220px;
+            }
+
+            .filter-input:focus {
+                outline: none;
+                border-color: #555;
+            }
+
+            .admin-btn {
+                background: #0f0f0f;
+                border: 1px solid #dddddd;
+                color: #dddddd;
+                text-transform: uppercase;
+                font-size: 12px;
+                padding: 8px 12px;
+                cursor: pointer;
+                font-family: "Geist Mono", monospace;
+            }
+
+            .admin-btn:hover {
+                color: #aaaaaa;
+                border-color: #aaaaaa;
+            }
+
+            /* custom select */
+            .custom-select {
+                position: relative;
+                min-width: 140px;
+                user-select: none;
+            }
+
+            .custom-select-trigger {
+                border: 1px solid #333;
+                padding: 8px 10px;
+                font-size: 12px;
+                text-transform: uppercase;
+                color: #eee;
+                cursor: pointer;
+                background: #0f0f0f;
+            }
+
+            .custom-select-trigger::after {
+                content: '▾';
+                float: right;
+                color: #666;
+            }
+
+            .custom-select.open .custom-select-trigger {
+                border-color: #555;
+            }
+
+            .custom-select-options {
+                display: none;
+                position: absolute;
+                top: calc(100% + 4px);
+                left: 0;
+                right: 0;
+                background: #0f0f0f;
+                border: 1px solid #333;
+                z-index: 20;
+            }
+
+            .custom-select.open .custom-select-options {
+                display: block;
+            }
+
+            .custom-select-option {
+                padding: 8px 10px;
+                font-size: 12px;
+                text-transform: uppercase;
+                color: #ccc;
+                cursor: pointer;
+            }
+
+            .custom-select-option:hover {
+                background: #222;
+            }
+
+            .custom-select-option.selected {
+                background: #444;
+                color: #fff;
+            }
+
+            /* custom date picker */
+            .custom-datepicker {
+                position: relative;
+                min-width: 130px;
+            }
+
+            .dp-trigger {
+                border: 1px solid #333;
+                padding: 8px 10px;
+                font-size: 12px;
+                color: #eee;
+                cursor: pointer;
+                background: #0f0f0f;
+            }
+
+            .custom-datepicker.open .dp-trigger {
+                border-color: #555;
+            }
+
+            .dp-panel {
+                display: none;
+                position: absolute;
+                top: calc(100% + 4px);
+                left: 0;
+                background: #0f0f0f;
+                border: 1px solid #333;
+                padding: 10px;
+                z-index: 20;
+                width: 220px;
+            }
+
+            .custom-datepicker.open .dp-panel {
+                display: block;
+            }
+
+            .dp-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 8px;
+                font-size: 12px;
+                text-transform: uppercase;
+                color: #ccc;
+            }
+
+            .dp-nav {
+                cursor: pointer;
+                padding: 0 6px;
+                color: #999;
+            }
+
+            .dp-nav:hover {
+                color: #eee;
+            }
+
+            .dp-grid {
+                display: grid;
+                grid-template-columns: repeat(7, 1fr);
+                gap: 2px;
+            }
+
+            .dp-dow {
+                font-size: 10px;
+                color: #666;
+                text-align: center;
+                padding: 4px 0;
+            }
+
+            .dp-day {
+                font-size: 12px;
+                text-align: center;
+                padding: 6px 0;
+                color: #ccc;
+                cursor: pointer;
+            }
+
+            .dp-day:hover {
+                background: #222;
+            }
+
+            .dp-day.dp-selected {
+                background: #444;
+                color: #fff;
+            }
+
+            .dp-empty {
+                cursor: default;
+            }
+
+            .dp-footer {
+                margin-top: 6px;
+                text-align: right;
+            }
+
+            .dp-clear {
+                font-size: 11px;
+                color: #888;
+                cursor: pointer;
+                text-transform: uppercase;
+            }
+
+            .dp-clear:hover {
+                color: #eee;
+            }
+
+            /* table + pagination */
+            .admin-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 13px;
+                margin-top: 10px;
+            }
+
+            .admin-table th, .admin-table td {
+                border-bottom: 1px solid #333;
+                padding: 10px 8px;
+                text-align: left;
+                vertical-align: top;
+                color: #ccc;
+            }
+
+            .admin-table th {
+                text-transform: uppercase;
+                font-size: 11px;
+                color: #999;
+            }
+
+            .admin-table td.msg {
+                max-width: 320px;
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+
+            .flag-hate { color: #ff6b6b; }
+            .flag-sexual { color: #e066ff; }
+            .flag-violence { color: #ff9f43; }
+            .flag-harassment { color: #ffd93d; }
+            .flag-none { color: #6bff8f; }
+
+            .act {
+                background: #0f0f0f;
+                border: 1px solid #444;
+                color: #ccc;
+                padding: 4px 8px;
+                margin-right: 4px;
+                cursor: pointer;
+                font-size: 11px;
+                text-transform: uppercase;
+                font-family: "Geist Mono", monospace;
+            }
+
+            .act:hover {
+                border-color: #888;
+            }
+
+            .act-danger {
+                border-color: #ff6b6b;
+                color: #ff6b6b;
+            }
+
+            .pagination {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+                margin-top: 15px;
+                font-size: 12px;
+                color: #999;
+            }
+
+            .pagination button {
+                background: #0f0f0f;
+                border: 1px solid #333;
+                color: #eee;
+                padding: 6px 10px;
+                cursor: pointer;
+                font-family: "Geist Mono", monospace;
+            }
+
+            .pagination button:disabled {
+                opacity: 0.4;
+                cursor: default;
+            }
+
+            .modal-overlay {
+                display: none;
+                position: fixed;
+                top: 0; left: 0; right: 0; bottom: 0;
+                background: rgba(0,0,0,0.6);
+                z-index: 100;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .modal-overlay.open {
+                display: flex;
+            }
+
+            .modal-box {
+                background: #0f0f0f;
+                border: 1px solid #333;
+                padding: 20px;
+                width: 320px;
+            }
+
+            .modal-title {
+                text-transform: uppercase;
+                font-size: 13px;
+                color: #ff6b6b;
+                margin-bottom: 10px;
+            }
+
+            .modal-body {
+                font-size: 13px;
+                color: #ccc;
+                margin-bottom: 18px;
+                line-height: 1.5;
+            }
+
+            .modal-actions {
+                display: flex;
+                justify-content: flex-end;
+                gap: 8px;
+            }
+
+            .modal-btn {
+                background: #0f0f0f;
+                border: 1px solid #444;
+                color: #ccc;
+                padding: 7px 12px;
+                cursor: pointer;
+                font-size: 12px;
+                text-transform: uppercase;
+                font-family: "Geist Mono", monospace;
+            }
+
+            .modal-btn:hover {
+                border-color: #888;
+            }
+
+            .modal-btn-danger {
+                border-color: #ff6b6b;
+                color: #ff6b6b;
+            }
+
+            .modal-btn-danger:hover {
+                background: #ff6b6b;
+                color: #0f0f0f;
+            }
         </style>
     </head>
     <body>

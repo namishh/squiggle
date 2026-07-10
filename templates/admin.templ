@@ -40,10 +40,200 @@ templ Admin(title string) {
         		<p class="statbox-stat statbox-stat-visible"> 2000 </p>
         </div>
    </div>
-  </div>
+   <div class="filters">
+     <div class="custom-select" id="sel-status">
+       <div class="custom-select-trigger">all statuses</div>
+       <div class="custom-select-options">
+         <div class="custom-select-option selected" data-value="">all statuses</div>
+         <div class="custom-select-option" data-value="visible">visible</div>
+         <div class="custom-select-option" data-value="hidden">hidden</div>
+         <div class="custom-select-option" data-value="spam">spam</div>
+       </div>
+     </div>
 
+     <div class="custom-select" id="sel-profanity">
+       <div class="custom-select-trigger">all flags</div>
+       <div class="custom-select-options">
+         <div class="custom-select-option selected" data-value="">all flags</div>
+         <div class="custom-select-option" data-value="none">none</div>
+         <div class="custom-select-option" data-value="hate">hate</div>
+         <div class="custom-select-option" data-value="sexual">sexual</div>
+         <div class="custom-select-option" data-value="violence">violence</div>
+         <div class="custom-select-option" data-value="harassment">harassment</div>
+       </div>
+     </div>
+
+     <div class="custom-select" id="sel-sort">
+       <div class="custom-select-trigger">newest first</div>
+       <div class="custom-select-options">
+         <div class="custom-select-option selected" data-value="newest">newest first</div>
+         <div class="custom-select-option" data-value="oldest">oldest first</div>
+       </div>
+     </div>
+
+     <input id="f-search" class="filter-input" type="text" placeholder="search name, id, age, text, site"/>
+
+     <div class="custom-datepicker" id="date-from" data-placeholder="from date"></div>
+     <div class="custom-datepicker" id="date-to" data-placeholder="to date"></div>
+
+     <button class="admin-btn" id="f-apply">apply</button>
+     <button class="admin-btn" id="f-reset">reset</button>
+   </div>
+
+   <table class="admin-table">
+     <thead>
+       <tr>
+         <th>created</th>
+         <th>name</th>
+         <th>site</th>
+         <th>message</th>
+         <th>flag</th>
+         <th>status</th>
+         <th>actions</th>
+       </tr>
+     </thead>
+     <tbody id="entries-body"></tbody>
+   </table>
+   <div class="modal-overlay" id="delete-modal">
+     <div class="modal-box">
+       <div class="modal-title">delete entry</div>
+       <div class="modal-body">This permanently deletes the entry. This cannot be undone.</div>
+       <div class="modal-actions">
+         <button class="modal-btn" id="modal-cancel">cancel</button>
+         <button class="modal-btn modal-btn-danger" id="modal-confirm">delete</button>
+       </div>
+     </div>
+   </div>
+   <div id="pagination" class="pagination"></div>
+  </div>
   <script>
-    const loadStats = async() => {
+    function createSelect(id, onChange) {
+      const root = document.getElementById(id);
+      const trigger = root.querySelector(".custom-select-trigger");
+      const options = root.querySelectorAll(".custom-select-option");
+      let value = root.querySelector(".selected")?.dataset.value ?? "";
+
+      trigger.addEventListener("click", (e) => {
+        e.stopPropagation();
+        document.querySelectorAll(".custom-select.open, .custom-datepicker.open").forEach(el => {
+          if (el !== root) el.classList.remove("open");
+        });
+        root.classList.toggle("open");
+      });
+
+      options.forEach(opt => {
+        opt.addEventListener("click", (e) => {
+          e.stopPropagation();
+          options.forEach(o => o.classList.remove("selected"));
+          opt.classList.add("selected");
+          value = opt.dataset.value;
+          trigger.textContent = opt.textContent.trim();
+          root.classList.remove("open");
+          onChange(value);
+        });
+      });
+
+      return { get value() { return value; } };
+    }
+
+    function createDatePicker(id, onChange) {
+      const root = document.getElementById(id);
+      const placeholder = root.dataset.placeholder;
+      let value = "";
+      let viewDate = new Date();
+
+      root.innerHTML = `<div class="dp-trigger">${placeholder}</div><div class="dp-panel"></div>`;
+      const trigger = root.querySelector(".dp-trigger");
+      const panel = root.querySelector(".dp-panel");
+
+      function render() {
+        const year = viewDate.getFullYear();
+        const month = viewDate.getMonth();
+        const startDay = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const monthName = viewDate.toLocaleString('default', { month: 'long' });
+
+        let cells = "";
+        for (let i = 0; i < startDay; i++) cells += `<span class="dp-day dp-empty"></span>`;
+        for (let d = 1; d <= daysInMonth; d++) {
+          const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+          const isSel = iso === value ? "dp-selected" : "";
+          cells += `<span class="dp-day ${isSel}" data-date="${iso}">${d}</span>`;
+        }
+
+        panel.innerHTML = `
+          <div class="dp-header">
+            <span class="dp-nav" data-dir="-1">‹</span>
+            <span class="dp-label">${monthName} ${year}</span>
+            <span class="dp-nav" data-dir="1">›</span>
+          </div>
+          <div class="dp-grid">
+            <span class="dp-dow">S</span><span class="dp-dow">M</span><span class="dp-dow">T</span>
+            <span class="dp-dow">W</span><span class="dp-dow">T</span><span class="dp-dow">F</span><span class="dp-dow">S</span>
+            ${cells}
+          </div>
+          <div class="dp-footer"><span class="dp-clear">clear</span></div>
+        `;
+      }
+
+      trigger.addEventListener("click", (e) => {
+        e.stopPropagation();
+        document.querySelectorAll(".custom-select.open, .custom-datepicker.open").forEach(el => {
+          if (el !== root) el.classList.remove("open");
+        });
+        root.classList.toggle("open");
+      });
+
+      panel.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (e.target.classList.contains("dp-nav")) {
+          viewDate.setMonth(viewDate.getMonth() + parseInt(e.target.dataset.dir));
+          render();
+        } else if (e.target.classList.contains("dp-day") && e.target.dataset.date) {
+          value = e.target.dataset.date;
+          trigger.textContent = value;
+          root.classList.remove("open");
+          render();
+          onChange(value);
+        } else if (e.target.classList.contains("dp-clear")) {
+          value = "";
+          trigger.textContent = placeholder;
+          root.classList.remove("open");
+          render();
+          onChange("");
+        }
+      });
+
+      render();
+      return { get value() { return value; } };
+    }
+
+    document.addEventListener("click", () => {
+      document.querySelectorAll(".custom-select.open, .custom-datepicker.open").forEach(el => el.classList.remove("open"));
+    });
+
+    const state = { page: 1, limit: 50 };
+
+    const selStatus = createSelect("sel-status", () => { state.page = 1; loadEntries(); });
+    const selProfanity = createSelect("sel-profanity", () => { state.page = 1; loadEntries(); });
+    const selSort = createSelect("sel-sort", () => { state.page = 1; loadEntries(); });
+    const dpFrom = createDatePicker("date-from", () => { state.page = 1; loadEntries(); });
+    const dpTo = createDatePicker("date-to", () => { state.page = 1; loadEntries(); });
+
+    function qs(params) {
+      return Object.entries(params)
+        .filter(([, v]) => v !== "" && v != null)
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+        .join("&");
+    }
+
+    function escapeHtml(str) {
+      const d = document.createElement("div");
+      d.innerText = str || "";
+      return d.innerHTML;
+    }
+
+    async function loadStats() {
       const res = await fetch("/admin/stats");
       const s = await res.json();
       document.querySelector('.statbox-stat-visible').innerHTML = s.visible;
@@ -51,9 +241,125 @@ templ Admin(title string) {
       document.querySelector('.statbox-stat-spam').innerHTML = s.spam;
       document.querySelector('.statbox-stat-hidden').innerHTML = s.hidden;
       document.querySelector('.statbox-stat-banned').innerHTML = s.banned;
+      document.querySelector('.statbox-stat-today').innerHTML = s.today;
     }
 
-    loadStats()
+    function currentFilters() {
+      return {
+        status: selStatus.value,
+        profanity: selProfanity.value,
+        sort: selSort.value,
+        search: document.getElementById("f-search").value.trim(),
+        from: dpFrom.value,
+        to: dpTo.value,
+        page: state.page,
+        limit: state.limit,
+      };
+    }
+
+    async function loadEntries() {
+      const res = await fetch("/admin/entry?" + qs(currentFilters()));
+      const data = await res.json();
+      renderEntries(data.entries || []);
+      renderPagination(data.pagination || {});
+    }
+
+    function renderEntries(entries) {
+      const body = document.getElementById("entries-body");
+      body.innerHTML = entries.map(e => `
+        <tr>
+          <td>${new Date(e.createdAt).toLocaleString()}</td>
+          <td>${escapeHtml(e.name)}</td>
+          <td>${escapeHtml(e.site || "")}</td>
+          <td class="msg">${escapeHtml(e.message)}</td>
+          <td class="flag-${e.dominantFlag}">${e.dominantFlag}</td>
+          <td>${e.status}</td>
+          <td>
+            <button class="act" onclick="setStatus('${e.id}','visible')">show</button>
+            <button class="act" onclick="setStatus('${e.id}','hidden')">hide</button>
+            <button class="act" onclick="setStatus('${e.id}','spam')">spam</button>
+            <button class="act act-danger" onclick="openDeleteModal('${e.id}')">delete</button>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    function renderPagination(p) {
+      const el = document.getElementById("pagination");
+      const totalPages = p.totalPages || 1;
+      const page = p.page || 1;
+      el.innerHTML = `
+        <button ${page <= 1 ? "disabled" : ""} onclick="goPage(${page - 1})">prev</button>
+        <span>page ${page} of ${totalPages} (${p.totalEntries || 0} entries)</span>
+        <button ${page >= totalPages ? "disabled" : ""} onclick="goPage(${page + 1})">next</button>
+      `;
+    }
+
+    function goPage(n) {
+      state.page = n;
+      loadEntries();
+    }
+
+    async function setStatus(id, status) {
+      await fetch("/admin/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status }),
+      });
+      loadEntries();
+      loadStats();
+    }
+
+    let pendingDeleteId = null;
+    const deleteModal = document.getElementById("delete-modal");
+
+    function openDeleteModal(id) {
+      pendingDeleteId = id;
+      deleteModal.classList.add("open");
+    }
+
+    function closeDeleteModal() {
+      pendingDeleteId = null;
+      deleteModal.classList.remove("open");
+    }
+
+    document.getElementById("modal-cancel").addEventListener("click", closeDeleteModal);
+
+    document.getElementById("modal-confirm").addEventListener("click", async () => {
+      if (!pendingDeleteId) return;
+      await fetch("/admin/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: pendingDeleteId }),
+      });
+      closeDeleteModal();
+      loadEntries();
+      loadStats();
+    });
+
+    deleteModal.addEventListener("click", (e) => {
+      if (e.target === deleteModal) closeDeleteModal();
+    });
+
+    function debounce(fn, delay) {
+      let timer;
+      return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), delay);
+      };
+    }
+
+    const debouncedSearch = debounce(() => {
+      state.page = 1;
+      loadEntries();
+    }, 300);
+
+    document.getElementById("f-search").addEventListener("input", debouncedSearch);
+
+    document.getElementById("f-apply").addEventListener("click", () => { state.page = 1; loadEntries(); });
+
+    loadStats();
+    loadEntries();
   </script>
   }
 }
