@@ -22,7 +22,7 @@ docker compose exec -T postgres psql -U <DB_USER> -d <DB_NAME> < ./seed.sql
 4. to build for prod
 
 ```
-docker compose up --build --watch
+docker compose up --build
 ```
 
 ### to use in your static site
