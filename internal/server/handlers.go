@@ -77,6 +77,16 @@ func (s *Server) handlePost(c *echo.Context) error {
 		s.logger.Info("[SENTIMENT] scored", "id", id, "score", score, "hate", flags.Hate, "sexual", flags.Sexual, "violence", flags.Violence, "harassment", flags.Harassment)
 		s.moderate(id, ipHash, score, flags)
 
+		s.bumpEntriesCache(bgctx)
+		s.publish(bgctx, "moderation", map[string]any{
+			"id":         id,
+			"score":      score,
+			"hate":       flags.Hate,
+			"sexual":     flags.Sexual,
+			"violence":   flags.Violence,
+			"harassment": flags.Harassment,
+		})
+
 	}(entry.ID, postreq.Message, postreq.Name, postreq.Site, ipHash)
 	s.bumpEntriesCache(c.Request().Context())
 

@@ -358,8 +358,25 @@ templ Admin(title string) {
 
     document.getElementById("f-apply").addEventListener("click", () => { state.page = 1; loadEntries(); });
 
+
+    const debouncedRefresh = debounce(() => {
+      loadEntries();
+      loadStats();
+    }, 300);
+
+
+    function connectStream() {
+      const es = new EventSource("/admin/stream");
+      es.addEventListener("update", debouncedRefresh);
+      es.onerror = () => {
+        es.close();
+        setTimeout(connectStream, 3000); // reconnect on drop
+      };
+    }
+
     loadStats();
     loadEntries();
+    connectStream();
   </script>
   }
 }

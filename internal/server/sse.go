@@ -43,6 +43,8 @@ func (s *Server) stream(c *echo.Context) error {
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
 
+	rc := http.NewResponseController(w)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -52,8 +54,14 @@ func (s *Server) stream(c *echo.Context) error {
 				return nil
 			}
 			fmt.Fprintf(w, "event: update\ndata: %s\n\n", msg.Payload)
+			if err := rc.Flush(); err != nil {
+				s.logger.Warn("[ADMIN SSE] flush unsupported, continuing unflushed", "err", err)
+			}
 		case <-heartbeat.C:
 			fmt.Fprint(w, ": heartbeat\n\n")
+			if err := rc.Flush(); err != nil {
+				s.logger.Warn("[ADMIN SSE] flush unsupported, continuing unflushed", "err", err)
+			}
 		}
 	}
 }
