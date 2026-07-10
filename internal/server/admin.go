@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v5"
@@ -14,6 +16,7 @@ type AdminEntry struct {
 	bun.BaseModel   `bun:"table:entries"`
 	ID              string          `json:"id"`
 	Name            string          `json:"name"`
+	DominantFlag    string          `json:"dominantFlag" bun:"dominant_flag,scanonly"`
 	Email           string          `json:"email"`
 	Site            string          `json:"site"`
 	Message         string          `json:"message"`
@@ -32,7 +35,13 @@ type AdminEntry struct {
 func (s *Server) adminListEntries(c *echo.Context) error {
 	ctx := c.Request().Context()
 
-	status := c.QueryParam("status") // "", "visible", "hidden", "spam"
+	status := c.QueryParam("status")
+	profanity := c.QueryParam("profanity")
+	sortOrder := c.QueryParam("sort")
+	search := strings.TrimSpace(c.QueryParam("search"))
+	from := c.QueryParam("from")
+	to := c.QueryParam("to")
+
 	page := 1
 	if p, err := strconv.Atoi(c.QueryParam("page")); err == nil && p > 0 {
 		page = p
@@ -43,12 +52,57 @@ func (s *Server) adminListEntries(c *echo.Context) error {
 	}
 	offset := (page - 1) * limit
 
+	version, _ := s.redis.Get(ctx, "admin:entries:version").Result()
+	key := "admin:entries:cache:" + cacheKey(status, profanity, sortOrder, search, from, to, page, limit, version)
+
+	if cached, err := s.redis.Get(ctx, key).Result(); err == nil {
+		return c.JSONBlob(http.StatusOK, []byte(cached))
+	}
+
 	var entries []AdminEntry
-	query := s.db.NewSelect().Model(&entries).ColumnExpr("id, name, email, site, message, status, user_agent, custom_data, sentiment_score, hate_score, sexual_score, violence_score, harassment_score, created_at").
-		ColumnExpr("count(*) OVER() AS total_count").Order("created_at desc").Limit(limit).Offset(offset)
+	query := s.db.NewSelect().Model(&entries).
+		ColumnExpr("id, name, email, site, message, status, user_agent, custom_data, sentiment_score, hate_score, sexual_score, violence_score, harassment_score, created_at").
+		ColumnExpr(dominantFlagSQL + " AS dominant_flag").
+		ColumnExpr("count(*) OVER() AS total_count").
+		Limit(limit).Offset(offset)
 
 	if status != "" {
 		query.Where("status = ?", status)
+	}
+	if profanity != "" {
+		query.Where(dominantFlagSQL+" = ?", profanity)
+	}
+
+	if search != "" {
+		switch {
+		case isUUID(search):
+			query.Where("id = ?", search)
+		case isNumeric(search):
+			days, _ := strconv.Atoi(search)
+			query.Where("created_at >= now() - (? || ' days')::interval", days)
+		default:
+			site := normalizeSite(search)
+			query.Where(`
+					search_vector @@ plainto_tsquery('english', ?)
+					OR similarity(message, ?) > 0.25
+					OR similarity(name, ?) > 0.25
+					OR similarity(site, ?) > 0.25
+					OR site ILIKE ?
+				`, search, search, search, site, "%"+site+"%")
+		}
+	}
+
+	if from != "" {
+		query.Where("created_at >= ?", from)
+	}
+	if to != "" {
+		query.Where("created_at <= ?", to)
+	}
+
+	if sortOrder == "oldest" {
+		query.Order("created_at asc")
+	} else {
+		query.Order("created_at desc")
 	}
 
 	if err := query.Scan(ctx); err != nil {
@@ -60,15 +114,32 @@ func (s *Server) adminListEntries(c *echo.Context) error {
 	if len(entries) > 0 {
 		total = entries[0].TotalCount
 	}
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + limit - 1) / limit
+	}
 
-	return c.JSON(http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"entries": entries,
 		"pagination": map[string]any{
 			"page":         page,
 			"limit":        limit,
 			"totalEntries": total,
+			"totalPages":   totalPages,
 		},
-	})
+	}
+
+	if body, err := json.Marshal(resp); err == nil {
+		s.redis.Set(ctx, key, body, 30*time.Second)
+	}
+
+	return c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) bumpEntriesCache(ctx context.Context) {
+	if err := s.redis.Incr(ctx, "admin:entries:version").Err(); err != nil {
+		s.logger.Warn("[ADMIN CACHE] version bump failed", "err", err)
+	}
 }
 
 func (s *Server) adminListAllEntries(c *echo.Context) error {
@@ -110,6 +181,8 @@ func (s *Server) adminSetStatus(c *echo.Context) error {
 		s.logger.Error("[ADMIN SET STATUS] failed", "err", err, "id", req.Id)
 		return ErrInternal
 	}
+	s.bumpEntriesCache(c.Request().Context())
+
 	return c.NoContent(http.StatusOK)
 }
 
@@ -169,5 +242,7 @@ func (s *Server) adminDeleteEntry(c *echo.Context) error {
 	}
 
 	s.logger.Warn("[ADMIN DELETE] entry hard-deleted", "id", req.Id)
+	s.bumpEntriesCache(c.Request().Context())
+
 	return c.NoContent(http.StatusOK)
 }

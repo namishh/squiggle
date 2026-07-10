@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net"
 	"net/url"
 	"regexp"
@@ -83,3 +84,23 @@ func generateSessionToken() (string, error) {
 
 	return hex.EncodeToString(b), nil
 }
+
+const dominantFlagSQL = `
+CASE
+  WHEN hate_score >= sexual_score AND hate_score >= violence_score AND hate_score >= harassment_score AND hate_score > 0 THEN 'hate'
+  WHEN sexual_score >= hate_score AND sexual_score >= violence_score AND sexual_score >= harassment_score AND sexual_score > 0 THEN 'sexual'
+  WHEN violence_score >= hate_score AND violence_score >= sexual_score AND violence_score >= harassment_score AND violence_score > 0 THEN 'violence'
+  WHEN harassment_score >= hate_score AND harassment_score >= sexual_score AND harassment_score >= violence_score AND harassment_score > 0 THEN 'harassment'
+  ELSE 'none'
+END`
+
+func cacheKey(parts ...any) string {
+	sum := sha256.Sum256([]byte(fmt.Sprint(parts...)))
+	return hex.EncodeToString(sum[:])
+}
+
+var uuidRegex = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var numericRegex = regexp.MustCompile(`^\d+$`)
+
+func isUUID(s string) bool    { return uuidRegex.MatchString(s) }
+func isNumeric(s string) bool { return numericRegex.MatchString(s) }

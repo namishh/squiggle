@@ -78,6 +78,7 @@ func (s *Server) handlePost(c *echo.Context) error {
 		s.moderate(id, ipHash, score, flags)
 
 	}(entry.ID, postreq.Message, postreq.Name, postreq.Site, ipHash)
+	s.bumpEntriesCache(c.Request().Context())
 
 	return c.JSON(http.StatusCreated, map[string]string{"status": "posted"})
 }
