@@ -8,8 +8,12 @@ templ Base (title string) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
         <style>
+
+            * {
+                padding: 0;
+                margin: 0;
+            }
             body {
-                padding: 10px;
                 background: #0f0f0f;
                 font-family: "Geist Mono", monospace;
             }
@@ -17,6 +21,7 @@ templ Base (title string) {
             .horizontal_container {
                 align-items: center;
                 gap: 10px;
+                padding: 20px;
                 display: flex;
             }
 
@@ -24,6 +29,7 @@ templ Base (title string) {
                 color: #eeeeee;
             }
             .container {
+                padding: 10px;
                 margin: 10px 0px;
                 font-size: 14px;
             }
@@ -81,6 +87,7 @@ templ Base (title string) {
                 text-transform: uppercase;
                 font-size: 14px;
                 padding: 7px 10px;
+                margin:  0 10px;
                 color: #dddddd;
                 text-decoration: none;
                 border: 1px solid #dddddd;
@@ -92,6 +99,36 @@ templ Base (title string) {
                 color: #aaaaaa;
                 text-decoration: none;
                 border: 1px solid #aaaaaa;
+            }
+
+            .statbox, .stats {
+                display: flex;
+                gap: 10px;
+            }
+
+            .stats {
+                border-top: 1px solid #333;
+                border-bottom: 1px solid #333;
+            }
+            .statbox {
+                padding: 10px;
+                position: relative
+            }
+
+            .statbox::after {
+                content: '';
+                height: 100%;
+                width: 1px;
+                background: #333;
+                position: absolute;
+                top: 0;
+                right: -5px;
+            }
+
+            .statbox-title {
+                text-transform: uppercase;
+                color: #999;
+                font-size: 12px;
             }
 
         </style>

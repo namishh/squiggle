@@ -4,7 +4,7 @@ package templates
 templ Admin(title string) {
   @Base(title) {
   <div class="horizontal_container">
-  		<a href="/" class="horizontal_container" style="text-decoration:none;">
+  		<a href="/" style="text-decoration:none; display: flex; gap: 10px; align-items: center;">
   			<img src="https://sakura.rex.wf/linear/squiggle?size=192" style="width:24px;height:24px">
 		  	<p>squiggle</p>
 	     </a>
@@ -12,8 +12,48 @@ templ Admin(title string) {
 
 		<a href="/admin/logout" style="text-decoration:none; color:#555; margin-left: 10px;">logout</a>
   </div>
-  <div class="container" style="color: #eee;">
-  this is admin page
+  <div class="" style="color: #eee;">
+
+  	<div class="stats">
+   		<div class="statbox">
+     		<p class="statbox-title"> Banned </p>
+     		<p class="statbox-stat statbox-stat-banned"> 2000 </p>
+     	</div>
+      	<div class="statbox">
+      		<p class="statbox-title"> Hidden </p>
+      		<p class="statbox-stat statbox-stat-hidden"> 2000 </p>
+      	</div>
+       <div class="statbox">
+       		<p class="statbox-title"> Spam </p>
+       		<p class="statbox-stat statbox-stat-spam"> 2000 </p>
+       	</div>
+        <div class="statbox">
+        		<p class="statbox-title"> Today </p>
+        		<p class="statbox-stat statbox-stat-today"> 2000 </p>
+        </div>
+        <div class="statbox">
+        		<p class="statbox-title"> Total </p>
+        		<p class="statbox-stat statbox-stat-total"> 2000 </p>
+        </div>
+        <div class="statbox">
+        		<p class="statbox-title"> Visible </p>
+        		<p class="statbox-stat statbox-stat-visible"> 2000 </p>
+        </div>
+   </div>
   </div>
+
+  <script>
+    const loadStats = async() => {
+      const res = await fetch("/admin/stats");
+      const s = await res.json();
+      document.querySelector('.statbox-stat-visible').innerHTML = s.visible;
+      document.querySelector('.statbox-stat-total').innerHTML = s.total;
+      document.querySelector('.statbox-stat-spam').innerHTML = s.spam;
+      document.querySelector('.statbox-stat-hidden').innerHTML = s.hidden;
+      document.querySelector('.statbox-stat-banned').innerHTML = s.banned;
+    }
+
+    loadStats()
+  </script>
   }
 }
