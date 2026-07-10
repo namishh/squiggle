@@ -1,6 +1,8 @@
 package server
 
 import (
+	"database/sql"
+	"errors"
 	"net/http"
 
 	"github.com/go-redis/redis_rate/v10"
@@ -42,6 +44,9 @@ func (s *Server) checkBanned(next echo.HandlerFunc) echo.HandlerFunc {
 
 		err := s.db.NewSelect().Table("defaulters").ColumnExpr("banned AND last_offense_at > now() - interval '3 days'").Where("ip_hash = ?", ipHash).Scan(c.Request().Context(), &banned)
 
+		if errors.Is(err, sql.ErrNoRows) {
+			return next(c)
+		}
 		if err != nil {
 			s.logger.Warn("[BAN CHECK] error checking", "err", err, "ip_hash", ipHash)
 			return next(c) // fail open, don't block legit users on db error

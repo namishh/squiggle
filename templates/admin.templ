@@ -10,7 +10,9 @@ templ Admin(title string) {
 	     </a>
 
 
-		<a href="/admin/logout" style="text-decoration:none; color:#555; margin-left: 10px;">logout</a>
+		<form method="POST" action="/admin/logout" style="display:inline; margin-left: 10px;">
+			<button type="submit" style="background:none; border:none; color:#555; cursor:pointer; padding:0; font:inherit;">logout</button>
+		</form>
   </div>
   <div class="" style="color: #eee;">
 

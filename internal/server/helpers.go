@@ -95,8 +95,39 @@ CASE
 END`
 
 func cacheKey(parts ...any) string {
-	sum := sha256.Sum256([]byte(fmt.Sprint(parts...)))
+	quoted := make([]string, len(parts))
+	for i, p := range parts {
+		quoted[i] = fmt.Sprintf("%q", p)
+	}
+	sum := sha256.Sum256([]byte(strings.Join(quoted, "\x00")))
 	return hex.EncodeToString(sum[:])
+}
+
+func sanitizePromptField(s string) string {
+	s = strings.ReplaceAll(s, "<", "")
+	s = strings.ReplaceAll(s, ">", "")
+	return s
+}
+
+type promptTags struct {
+	name, website, comment string
+}
+
+func newPromptTags() (promptTags, error) {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return promptTags{}, err
+	}
+	suffix := hex.EncodeToString(b)
+	return promptTags{
+		name:    "name-" + suffix,
+		website: "website-" + suffix,
+		comment: "comment-" + suffix,
+	}, nil
+}
+
+func (t promptTags) wrap(tag, value string) string {
+	return "<" + tag + ">" + value + "</" + tag + ">"
 }
 
 var uuidRegex = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)

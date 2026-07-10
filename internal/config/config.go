@@ -42,7 +42,7 @@ func getEnvOr(key, def string) string {
 func LoadConfig() (Config, error) {
 	cfg := Config{
 		Environment:         getEnvOr("ENVIRONMENT", "dev"),
-		Port:                getEnvOr("ADDR", "8080"),
+		Port:                getEnvOr("PORT", getEnvOr("ADDR", "8080")),
 		DatabaseURL:         os.Getenv("DATABASE_URL"),
 		AdminPassword:       os.Getenv("ADMIN_PASSWORD"),
 		RedisURL:            os.Getenv("REDIS_URL"),

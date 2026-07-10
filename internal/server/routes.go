@@ -34,7 +34,7 @@ func (s *Server) RegisterRoutes(e *echo.Echo) {
 
 	admin := e.Group("/admin", s.requireAdmin)
 	admin.GET("", s.handleAdminPage)
-	admin.GET("/logout", s.handleLogout)
+	admin.POST("/logout", s.handleLogout)
 	admin.GET("/all", s.adminListAllEntries)
 	admin.GET("/entry", s.adminListEntries)
 	admin.POST("/status", s.adminSetStatus)
