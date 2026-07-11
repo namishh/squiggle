@@ -22,12 +22,16 @@
                 placeholder="Leave a message..."
                 required
             ></textarea>
-            <div
-                class="cf-turnstile"
-                data-sitekey="1x00000000000000000000AA"
-            ></div>
+            <br />
             <button type="submit">Post</button>
         </form>
+        <div
+            id="turnstile-widget"
+            class="cf-turnstile"
+            data-sitekey="1x00000000000000000000AA"
+            data-callback="onTurnstileSuccess"
+            data-expired-callback="onTurnstileExpired"
+        ></div>
 
         <hr />
         <div id="comments-section">
@@ -42,16 +46,28 @@
 
         <script>
             const BASE_URL = "http://localhost:8080";
+            let turnstileToken = "";
+
+            function onTurnstileSuccess(token) {
+                turnstileToken = token;
+            }
+
+            function onTurnstileExpired() {
+                turnstileToken = "";
+            }
+
             const form = document.querySelector("#entry-form");
             form.addEventListener("submit", async (e) => {
                 e.preventDefault();
+                if (!turnstileToken) {
+                    console.log("complete the captcha first");
+                    return;
+                }
+
                 const name = document.querySelector("#name").value;
                 const email = document.querySelector("#email").value;
                 const site = document.querySelector("#site").value;
                 const message = document.querySelector("#message").value;
-                const turnstileToken = document.querySelector(
-                    '[name="cf-turnstile-response"]',
-                ).value;
                 try {
                     const res = await fetch(BASE_URL + "/entry", {
                         method: "POST",
@@ -66,10 +82,13 @@
                     });
                     const data = await res.json();
                     console.log(res.status, data);
+                    turnstileToken = "";
+                    if (window.turnstile) {
+                        turnstile.reset("#turnstile-widget");
+                    }
                     loadComments(1);
-                    //form.reset();
                 } catch (err) {
-                    console.log("error");
+                    console.log("error", err);
                 }
             });
 

@@ -26,7 +26,6 @@ func (s *Server) ttverify(ctx context.Context, token string, remoteIp string) (b
 		return false, err
 	}
 
-	req.URL.RawQuery = form.Encode()
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := http.DefaultClient.Do(req)

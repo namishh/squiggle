@@ -69,9 +69,6 @@ func (s *Server) ttCheck(next echo.HandlerFunc) echo.HandlerFunc {
 
 		token := req.TurnstileToken
 		if token == "" {
-			token = c.FormValue("cf-turnstile-response")
-		}
-		if token == "" {
 			s.logger.Error("[SECURITY]: Turnstile token missing")
 			return ErrInvalidCaptcha
 		}
